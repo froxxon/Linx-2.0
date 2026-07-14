@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>RestPSWrapper-20260625</UserSecretsId>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+
+    <!-- IIS deployment requires standard multi-file output -->
+    <!-- Single-file publishing is not supported in IIS -->
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+
+    <!-- Disable static web assets since this is a pure API with no static content -->
+    <GenerateStaticWebAssetsManifest>false</GenerateStaticWebAssetsManifest>
+    <StaticWebAssetBasePath></StaticWebAssetBasePath>
+    <EnableDefaultStaticWebAssets>false</EnableDefaultStaticWebAssets>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="10.0.0" />
+    <PackageReference Include="Polly" Version="8.4.1" />
+    <PackageReference Include="Polly.Extensions.Http" Version="3.0.0" />
+    <PackageReference Include="Serilog" Version="3.1.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.0" />
+  </ItemGroup>
+
+  <!-- Completely disable static web assets generation -->
+  <Target Name="GenerateStaticWebAssetsManifest" />
+  <Target Name="GenerateStaticWebAssetsPublishManifest" />
+
+</Project>
