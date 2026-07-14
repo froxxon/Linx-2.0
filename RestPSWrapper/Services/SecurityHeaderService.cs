@@ -56,11 +56,8 @@ public class SecurityHeaderService : ISecurityHeaderService
                 _logger.LogDebug("Content-Language header set: {Language}", _config.ContentLanguage);
             }
 
-            // Prevent clickjacking
+            // Prevent clickjacking - deny all framing
             response.Headers["X-Frame-Options"] = "DENY";
-
-            // Prevent opening in XFRAME
-            response.Headers["X-Frame-Options"] = "SAMEORIGIN";
 
             // Disable cross-domain policies
             response.Headers["X-Permitted-Cross-Domain-Policies"] = "none";

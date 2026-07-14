@@ -1,9 +1,11 @@
 using System.Security.Cryptography;
+using System.Net;
 using Serilog;
 using Serilog.Events;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.CircuitBreaker;
@@ -134,7 +136,7 @@ builder.Services.AddResponseCompression(options =>
     };
 });
 
-// Add CORS - Accept all origins but validate with middleware
+// Add CORS - Use explicit trusted origins when credentials are allowed
 builder.Services.AddCors(options =>
 {
     var allowedMethods = string.IsNullOrEmpty(scriptVariables.AccessControlAllowMethods)
@@ -143,13 +145,39 @@ builder.Services.AddCors(options =>
             .Select(m => m.Trim())
             .ToArray();
 
+    // Parse trusted origins from configuration
+    var trustedOrigins = string.IsNullOrEmpty(scriptVariables.TrustedOrigins)
+        ? Array.Empty<string>()
+        : scriptVariables.TrustedOrigins.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(o => o.Trim())
+            .Where(o => !string.IsNullOrEmpty(o))
+            .ToArray();
+
     options.AddDefaultPolicy(policy =>
     {
-        policy
-            .SetIsOriginAllowed(origin => true)  // Accept any origin (validated in middleware)
-            .WithMethods(allowedMethods)
-            .AllowAnyHeader()
-            .AllowCredentials();
+        // SECURITY FIX: Use explicit origins instead of SetIsOriginAllowed when using AllowCredentials
+        // SetIsOriginAllowed(origin => true) + AllowCredentials() is a security risk
+        if (trustedOrigins.Length > 0)
+        {
+            policy
+                .WithOrigins(trustedOrigins)
+                .WithMethods(allowedMethods)
+                .AllowAnyHeader()
+                .AllowCredentials();
+
+            Log.Information("CORS configured with explicit trusted origins: {Origins}", string.Join(", ", trustedOrigins));
+        }
+        else
+        {
+            // Fallback: Accept any origin but validate in middleware (no credentials)
+            // This is less secure but maintains backward compatibility
+            policy
+                .SetIsOriginAllowed(origin => true)
+                .WithMethods(allowedMethods)
+                .AllowAnyHeader();
+
+            Log.Warning("CORS configured without trusted origins - credentials disabled. Configure TrustedOrigins for enhanced security.");
+        }
     });
 });
 
@@ -158,9 +186,32 @@ builder.Services.AddControllers(options =>
     options.Filters.AddService<IAsyncActionFilter>();
 });
 
+// Configure forwarded headers for proxy/IIS scenarios (rate limiting IP trust)
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+    // Trust localhost and private networks (IIS, reverse proxies on same network)
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+
+    // Trust localhost
+    options.KnownProxies.Add(IPAddress.Loopback);
+    options.KnownProxies.Add(IPAddress.IPv6Loopback);
+
+    // Trust private network ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
+
+    // Limit to 1 proxy hop for security (can be adjusted if more hops needed)
+    options.ForwardLimit = 1;
+});
+
 var app = builder.Build();
 
 // Use middleware in correct order (critical for security)
+app.UseForwardedHeaders();  // MUST be first to process X-Forwarded-* headers
 app.UseRouting();
 app.UseResponseCompression();
 app.UseCors();
@@ -214,7 +265,8 @@ static ScriptVariablesConfig LoadAndValidateConfig(IConfiguration configuration)
             // If config has "psVar_Test", store as "psVar_Test"
             config.PSVars[key] = value;
 
-            Log.Information("Loaded dynamic variable: {Key} = {Value}", key, value);
+            // SECURITY: Redact sensitive values from logs (never log PSVar values)
+            Log.Information("Loaded dynamic variable: {Key} = [REDACTED]", key);
         }
     }
 
@@ -237,6 +289,30 @@ static ScriptVariablesConfig LoadAndValidateConfig(IConfiguration configuration)
     // SECURITY: Validate signature secret
     if (string.IsNullOrEmpty(config.RequestSignatureSecret))
         throw new InvalidOperationException("RequestSignatureSecret MUST be set to a secure random value. It cannot be empty.");
+
+    // SECURITY: Never log the actual secret value
+    Log.Information("RequestSignatureSecret: [CONFIGURED]");
+
+    // SECURITY: Validate backend URL (accepted risk - localhost only recommended)
+    if (!string.IsNullOrEmpty(config.PowerShellServiceUrl))
+    {
+        if (Uri.TryCreate(config.PowerShellServiceUrl, UriKind.Absolute, out var backendUri))
+        {
+            var isLocalhost = backendUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                              backendUri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                              backendUri.Host.Equals("::1", StringComparison.OrdinalIgnoreCase);
+
+            if (!isLocalhost)
+            {
+                Log.Warning("SECURITY: PowerShellServiceUrl is configured to non-localhost backend: {Backend}. " +
+                           "For production, prefer HTTPS and consider mTLS for enhanced security.", config.PowerShellServiceUrl);
+            }
+            else if (!backendUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
+            {
+                Log.Information("Backend configured for localhost with HTTP: {Backend} (accepted risk for local development)", config.PowerShellServiceUrl);
+            }
+        }
+    }
 
     return config;
 }

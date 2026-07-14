@@ -42,7 +42,12 @@ public class SignatureService : ISignatureService
         try
         {
             var expectedSignature = GenerateSignature(data);
-            return expectedSignature.Equals(signature, StringComparison.Ordinal);
+
+            // Use constant-time comparison to prevent timing attacks
+            var expectedBytes = Convert.FromBase64String(expectedSignature);
+            var providedBytes = Convert.FromBase64String(signature);
+
+            return CryptographicOperations.FixedTimeEquals(expectedBytes, providedBytes);
         }
         catch (Exception ex)
         {
