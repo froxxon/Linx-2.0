@@ -53,8 +53,9 @@ public class SecurityMiddleware
         var nonce = GenerateSecureNonce();
         context.Items["CspNonce"] = nonce;
 
-        // 3. Apply security headers (CSP, X-Frame-Options, etc.)
-        _securityHeaderService.ApplySecurityHeaders(context.Response, nonce);
+        // 3. Apply security headers (CSP, X-Frame-Options, etc.) and store protected header names
+        var protectedHeaders = _securityHeaderService.ApplySecurityHeaders(context.Response, nonce);
+        context.Items["ProtectedHeaders"] = protectedHeaders;
 
         // 4. Get or create session ID
         var sessionId = GetOrCreateSessionId(context);

@@ -95,12 +95,24 @@ public class ProxyController : ControllerBase
             body,
             userHeaders);
 
-        // Forward all response headers except Transfer-Encoding and Content-Type (handled separately)
+        // Get protected headers from SecurityMiddleware (headers set from appsettings.json)
+        var protectedHeaders = HttpContext.Items["ProtectedHeaders"] as HashSet<string> ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Forward all response headers except Transfer-Encoding, Content-Type, and protected appsettings headers
         foreach (var header in headers)
         {
             if (header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase) ||
                 header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
             {
+                continue;
+            }
+
+            // Skip headers that are protected by appsettings.json configuration
+            if (protectedHeaders.Contains(header.Key))
+            {
+                _logger.LogWarning("PowerShell backend attempted to overwrite protected header '{HeaderKey}'. " +
+                    "This header is set in appsettings.json and cannot be overwritten. Backend value '{BackendValue}' was ignored.",
+                    header.Key, header.Value);
                 continue;
             }
 

@@ -1,5 +1,5 @@
 param ( $RequestArgs )
-#return 'hej'
+
 #region Get user information
     $CurrentUser = $null
     $CurrentUser = $($Request.Headers['X-Authenticated-User'] -replace ("$($ScriptVariables.Domain)\\",''))  
@@ -35,12 +35,10 @@ param ( $RequestArgs )
         if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     }
     if ( $MainUser.memberof -match "$($ScriptVariables.EditGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
-    if ( !$AdminLink ) {
-        foreach ( $group in $AdminMembers ) {
-            if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
-        }
-        if ( $MainUser.memberof -match "$($ScriptVariables.AdminGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
+    foreach ( $group in $AdminMembers ) {
+        if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     }
+    if ( $MainUser.memberof -match "$($ScriptVariables.AdminGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
 #endregion
 #region Get Links
     $Links = Import-CSV $ScriptVariables.LinksFilePath -Delimiter $ScriptVariables.CSVDelimiter

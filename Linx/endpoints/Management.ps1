@@ -35,6 +35,7 @@ foreach ( $obj in $Attributes ) {
     $RequestObj.Add($Name,$Value.Trim())
 }
 
+<#
 foreach ( $attrib in $RequestObj.GetEnumerator() ) {
     switch ($attrib.name) {
         Name { if ( $attrib.value -match $ScriptVariables.Regex.RgxName ) { $LinkName = $attrib.value } }
@@ -59,6 +60,63 @@ foreach ( $attrib in $RequestObj.GetEnumerator() ) {
         AllowPersonalTheme { $AllowPersonalTheme = $attrib.value }
         ShowFooter { $ShowFooter = $attrib.value }
         NewCSSTheme { if ( $attrib.value -match $ScriptVariables.Regex.RgxNewCSSName ) { $NewCSSTheme = $attrib.value.trim() -replace ' ','_' } }
+    }
+}
+#>
+foreach ( $attrib in $RequestObj.GetEnumerator() ) {
+    $cleanValue = $attrib.value.ToString().Trim()
+    $outUri = $null
+
+    switch ($attrib.name) {
+        Name { 
+            if ( $cleanValue -match $ScriptVariables.Regex.RgxName ) { 
+                $LinkName = [System.Net.WebUtility]::HtmlEncode($cleanValue) 
+            } 
+        }
+        URL { 
+            if ([Uri]::TryCreate($cleanValue, [UriKind]::Absolute, [ref]$outUri) -and ($outUri.Scheme -in @('http', 'https'))) {
+                $LinkURL = $outUri.AbsoluteUri
+            } else {
+                $LinkURL = $null # Or handle invalid URL error
+            }
+        }
+        Description { 
+            if ( $cleanValue -match $ScriptVariables.Regex.RgxDescription ) { 
+                $LinkDescription = [System.Net.WebUtility]::HtmlEncode($cleanValue) 
+            } 
+        }
+        Category { if ( $cleanValue -match $ScriptVariables.Regex.RgxCategory ) { $LinkCategory = $cleanValue } }
+        Role     { if ( $cleanValue -match $ScriptVariables.Regex.RgxRole ) { $LinkRole = $cleanValue } }
+        
+        Enabled { $LinkEnabled = $attrib.value }
+        Personal { $LinkPersonal = $attrib.value }
+
+        Type     { $Type = [System.Net.WebUtility]::HtmlEncode($cleanValue) }
+        Contact  { if ( $cleanValue -match $ScriptVariables.Regex.RgxContact ) { $LinkContact = $cleanValue } }
+        Notes    { 
+            if ( $cleanValue -match $ScriptVariables.Regex.RgxNotes ) { 
+                $LinkNotes = [System.Net.WebUtility]::HtmlEncode($cleanValue) 
+            } 
+        }
+        Tags     { if ( $cleanValue -match $ScriptVariables.Regex.RgxTags ) { $LinkTag = $cleanValue } }
+        
+        ID       { if ($cleanValue -match '^\d+$') { $ID = [int]$cleanValue } }
+        
+        Logo { 
+            if ([Uri]::TryCreate($cleanValue, [UriKind]::Absolute, [ref]$outUri) -and ($outUri.Scheme -in @('http', 'https'))) {
+                $Logo = $outUri.AbsoluteUri
+            }
+        }
+        Language { if ($cleanValue -match '^[a-zA-Z\-]{2,5}$') { $Language = $cleanValue } } # e.g., en-US
+        
+        LogoWidth { if ($cleanValue -match '^\d+$') { $LogoWidth = [int]$cleanValue } }
+        LogRows   { if ($cleanValue -match '^\d+$') { $LogRows = [int]$cleanValue } }
+        
+        Theme              { if ($cleanValue -match '^[a-zA-Z0-9_\-]+$') { $Theme = $cleanValue } }
+        EditTheme          { if ($cleanValue -match '^[a-zA-Z0-9_\-]+$') { $EditTheme = $cleanValue } }
+        AllowPersonalLinks { $AllowPersonalLinks = $attrib.value }
+        AllowPersonalTheme { $AllowPersonalTheme = $attrib.value }
+        ShowFooter         { $ShowFooter = $attrib.value }
     }
 }
 if ( ! $LinkEnabled ) { $LinkDisabled = "true" }
