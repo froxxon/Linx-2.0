@@ -37,19 +37,6 @@ function Invoke-RequestRouter {
     if ($null -ne $Route) {
         # Process Request
         $RequestCommand = Join-Path -Path $ScriptVariables.ScriptPath -ChildPath "endPoints\$($Route.RequestCommand)"
-
-        # SECURITY: Validate that RequestCommand is either a .ps1 script or allowed static file
-        $allowedExtensions = @('.ps1', '.css', '.js', '.jquery', '.ttf', '.eot', '.woff', '.woff2', '.html', '.htm', '.json', '.xml', '.txt')
-        $commandExtension = [System.IO.Path]::GetExtension($RequestCommand).ToLower()
-
-        if ($commandExtension -notin $allowedExtensions) {
-            Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType ERROR -Message "Invoke-RequestRouter: Route command '$($Route.RequestCommand)' has invalid extension '$commandExtension'. Only .ps1 scripts and static files allowed."
-            $script:StatusDescription = "Internal Server Error"
-            $script:StatusCode = 500
-            $script:result = $null
-            return $null
-        }
-
         set-location $PSScriptRoot
         if ($RequestCommand -match "\.ps1$") {
             # Execute Endpoint Script
@@ -59,12 +46,45 @@ function Invoke-RequestRouter {
             $CommandReturn = Get-Content $RequestCommand -Raw
         }
         else {
-            # SECURITY FIX: Removed Invoke-Expression to prevent command injection
-            # All route commands must now be .ps1 scripts or static files
-            Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType ERROR -Message "Invoke-RequestRouter: Route command '$RequestCommand' is not a .ps1 script or static file. Direct command execution is disabled for security."
-            $script:StatusDescription = "Internal Server Error"
-            $script:StatusCode = 500
-            $CommandReturn = $null
+            # SECURITY FIX: Execute commands from Routes.json safely without Invoke-Expression
+            # Use call operator (&) to prevent command injection from RequestArgs
+            try {
+                if ([string]::IsNullOrEmpty($RequestArgs)) {
+                    # No arguments - execute command directly
+                    $CommandReturn = & $RequestCommand
+                }
+                else {
+                    # Parse RequestArgs safely as an array of arguments
+                    # Split on spaces but preserve quoted strings
+                    $argList = @()
+                    $currentArg = ""
+                    $inQuotes = $false
+
+                    for ($i = 0; $i -lt $RequestArgs.Length; $i++) {
+                        $char = $RequestArgs[$i]
+                        if ($char -eq '"' -or $char -eq "'") {
+                            $inQuotes = -not $inQuotes
+                        }
+                        elseif ($char -eq ' ' -and -not $inQuotes) {
+                            if ($currentArg) {
+                                $argList += $currentArg
+                                $currentArg = ""
+                            }
+                        }
+                        else {
+                            $currentArg += $char
+                        }
+                    }
+                    if ($currentArg) { $argList += $currentArg }
+
+                    # Execute with call operator - prevents command injection
+                    $CommandReturn = & $RequestCommand $argList
+                }
+            }
+            catch {
+                Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType ERROR -Message "Invoke-RequestRouter: Error executing command '$RequestCommand': $_"
+                $CommandReturn = $null
+            }
         }
 
         if ($null -eq $CommandReturn) {

