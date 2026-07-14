@@ -169,10 +169,20 @@ function Invoke-StreamOutput {
 
     $script:Response.StatusCode = $script:StatusCode
     $script:Response.StatusDescription = $script:StatusDescription
-    
+
     $message = $script:result  
     [byte[]]$buffer = [System.Text.Encoding]::UTF8.GetBytes("$message")
-    $script:Response.ContentLength64 = $buffer.length
+
+    # Set ContentLength64 before writing to OutputStream
+    # Use try-catch in case headers were already sent
+    try {
+        $script:Response.ContentLength64 = $buffer.length
+    }
+    catch {
+        # Headers already sent, cannot set ContentLength64
+        Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType TRACE -Message "Invoke-StreamOutput: ContentLength64 already set or headers sent"
+    }
+
     $script:Response.OutputStream.Write($buffer, 0, $buffer.length)
     $script:Response.Close()
 }
