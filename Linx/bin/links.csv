@@ -1,0 +1,9 @@
+﻿ID;Name;URL;Description;Category;Role;Tags;Contact;Notes;Disabled
+00000033;Microsoft Admin Portal;https://admin.microsoft.com/Adminportal/Home#/alladmincenters;Microsofts Adminportal;Säkerhet;;;;;;
+00000064;Broadcom - Support;https://login.broadcom.com/;Support portal for Broadcom cases;Supportportaler;;;;;;
+00000082;Cloudflare;https://dash.cloudflare.com/login;;Kommunikation & Nätverk;;cloudflare;;;;
+00000094;Microsoft - Support;https://support.serviceshub.microsoft.com/supportforbusiness/create;Registrera case hos Microsoft;Supportportaler;;servicehub;;;;
+00000133;Thales - Supportportal;https://supportportal.thalesgroup.com;Thales Customer Support Portal;Supportportaler;;thales support;;;;
+00000134;Cisco - Support;https://url-saknas;Skapa supportärende för Cisco via ATEA;Supportportaler;;Cisco;;When Prio 1, 2: Call xx-xx-xxxx-xxx, Prio 3: Mail contact@domain.com;;
+00000156;detectify;https://detectify.com/login;Complete External Attack Surface Management;Säkerhet;,;security threatscan scan;;SSO trough organization;;
+00000202;Test123;https://test123.com;;Cisco;;;;;;

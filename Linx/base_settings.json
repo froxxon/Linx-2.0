@@ -1,0 +1,12 @@
+﻿{
+    "ServerURL":  "https://linx.domain.com",
+    "ShortURL":  "localhost",
+    "Port":  "8080",
+    "Domain":  "domain",
+    "AdminGroup":  "Task-Linx-Admin",
+    "EditGroup":  "Task-Linx-Edit",
+    "OU_Admin":  "OU=T1-Accounts,OU=Tier 1,OU=Admin,DC=domain,DC=com",
+    "OU_Group":  "OU=T0-Tasks,OU=Tier 0,OU=Admin,DC=domain,DC=com",
+    "OU_User":  "OU=StandardUsers,DC=domain,DC=com",
+    "Language":  "sv-se"
+}

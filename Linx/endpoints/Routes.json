@@ -1,0 +1,27 @@
+[
+  {
+    "RequestType": "GET",
+    "RequestURL": "/",
+    "RequestCommand": "Get-Links.ps1"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/personal",
+    "RequestCommand": "Get-LinksPersonal.ps1"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/admin",
+    "RequestCommand": "Get-LinksAdmin.ps1"
+  },
+  {
+    "RequestType": "POST",
+    "RequestURL": "/ManageLink",
+    "RequestCommand": "Management.ps1"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/favicon.ico",
+    "RequestCommand": "Get-FavIcon.ps1"
+  }
+]
