@@ -3,6 +3,7 @@ param ( $RequestArgs )
 #region Get user information
     $CurrentUser = $null
     $CurrentUser = $($Request.Headers['X-Authenticated-User'] -replace ("$($ScriptVariables.Domain)\\",''))  
+    if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_]{1,64}$' ) { return $ScriptVariables.Text.AccessDenied }
     
     if ( $ScriptVariables.AllowPersonalTheme -eq $true ) {
         $PersonalCSSLink = (Get-ChildItem ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-*.css_link')).BaseName
@@ -31,12 +32,12 @@ param ( $RequestArgs )
     foreach ( $group in $EditMembers ) {
         if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     }
-    if ( $MainUser.memberof -match "$($ScriptVariables.EditGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
+    if ( $MainUser.memberof -eq "$($ScriptVariables.EditGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     if ( !$AdminLink ) {
         foreach ( $group in $AdminMembers ) {
             if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
         }
-        if ( $MainUser.memberof -match "$($ScriptVariables.AdminGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
+        if ( $MainUser.memberof -eq "$($ScriptVariables.AdminGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     }
 #endregion
 #region Get Links

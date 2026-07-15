@@ -2,7 +2,8 @@ param ( $RequestArgs )
 
 #region Get user information
     $CurrentUser = $null
-    $CurrentUser = $($Request.Headers['X-Authenticated-User'] -replace ("$($ScriptVariables.Domain)\\",''))  
+    $CurrentUser = $($Request.Headers['X-Authenticated-User'] -replace ("$($ScriptVariables.Domain)\\",''))
+    if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_]{1,64}$' ) { return $ScriptVariables.Text.AccessDenied }
     
     try { '' | Out-File ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '.accesstime' ) }
     catch {}
@@ -34,11 +35,11 @@ param ( $RequestArgs )
     foreach ( $group in $EditMembers ) {
         if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     }
-    if ( $MainUser.memberof -match "$($ScriptVariables.EditGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
+    if ( $MainUser.memberof -eq "$($ScriptVariables.EditGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     foreach ( $group in $AdminMembers ) {
         if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     }
-    if ( $MainUser.memberof -match "$($ScriptVariables.AdminGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
+    if ( $MainUser.memberof -eq "$($ScriptVariables.AdminGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
 #endregion
 #region Get Links
     $Links = Import-CSV $ScriptVariables.LinksFilePath -Delimiter $ScriptVariables.CSVDelimiter
@@ -157,7 +158,7 @@ if ( !$RequestArgs ) {
 }
 elseif ( $RequestArgs -match '^SelectTheme' ) {
     $SelectedTheme = [regex]::match($RequestArgs,"(?<=&).[^&]*")
-    $Source = [regex]::match($RequestArgs,"(?<=&.*&).*$")
+
     if ( $SelectedTheme -match "^$($ScriptVariables.Theme)$" ) {
         Remove-Item ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-*.css_link') -Force
     }
@@ -165,7 +166,7 @@ elseif ( $RequestArgs -match '^SelectTheme' ) {
         Remove-Item ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-*.css_link') -Force
         '' | Out-File ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-' + $SelectedTheme + '.css_link') -Force
     }
-    [void]$HTML.AppendLine('<form id="AutoSubmit" action="/' + $Source + '" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>')
+    [void]$HTML.AppendLine('<form id="AutoSubmit" action="/" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>')
     [void]$HTML.AppendLine('<script type="text/javascript" nonce="{{nonce}}">')
     [void]$HTML.AppendLine('function formAutoSubmit(){document.getElementById("AutoSubmit").submit();}')
     [void]$HTML.AppendLine('window.onload = formAutoSubmit;')

@@ -3,6 +3,7 @@ param ( $RequestArgs )
 #region Get user information
     $CurrentUser = $null
     $CurrentUser = $($Request.Headers['X-Authenticated-User'] -replace ("$($ScriptVariables.Domain)\\",''))  
+    if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_]{1,64}$' ) { return $ScriptVariables.Text.AccessDenied }
     
     if ( $ScriptVariables.AllowPersonalTheme -eq $true ) {
         $PersonalCSSLink = (Get-ChildItem ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-*.css_link')).BaseName
@@ -38,7 +39,7 @@ param ( $RequestArgs )
         if ( $group -in $MainUser.memberof -or $group -eq $MainUser.distinguishedname ) {
             $Edit = '<th width="5%"></th>'
             $Admin = "<th></th>"
-            $AdminLinks += '<a href="' + $ScriptVariables.ServerURL + '/">' + $ScriptVariables.Text.StartPage + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin">' + $ScriptVariables.Text.AdmOverview + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Log">' + $ScriptVariables.Text.AdmLog + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin?CSS">CSS</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Text">Text</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Regex">Regex</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Settings">' + $ScriptVariables.Text.AdmSettings + '</a>'
+            $AdminLinks += '<a href="' + $ScriptVariables.ServerURL + '/">' + $ScriptVariables.Text.StartPage + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin">' + $ScriptVariables.Text.AdmOverview + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Log">' + $ScriptVariables.Text.AdmLog + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Text">Text</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Regex">Regex</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Settings">' + $ScriptVariables.Text.AdmSettings + '</a>'
         }
     }
 #endregion
@@ -209,60 +210,6 @@ elseif ( $RequestArgs -match '^remove[0-9]{8}$' ) {
     window.onload = formAutoSubmit;
   </script>
 "@ )
-}
-elseif ( $RequestArgs -match '^CSS$' -or $RequestArgs -match '^CSS&theme-.*') {
-    if ( ! $Admin ) { exit }
-    if ( $RequestArgs -match '^CSS&theme-.*' ) {
-        $SelectedThemeToEdit = $RequestArgs -replace 'CSS&',''
-    }
-    else { $SelectedThemeToEdit = $ScriptVariables.Theme }
-    if ( $PersonalCSSLink ) {
-        $DisplayedTheme = [regex]::match($PersonalCSSLink,"theme-.[^\.]*")
-    }
-    else { $DisplayedTheme = $ScriptVariables.Theme }
-    $ConvertedCSS = ConvertFrom-CSS -Theme $SelectedThemeToEdit
-    $ConvertedActiveCSS = ConvertFrom-CSS -CurrentUserTheme $DisplayedTheme
-    [void]$HTML.AppendLine('<tr><td align="left"><b>' + $ScriptVariables.Text.AwarenessText + '</b><br><label for="ColorPicker">' + $ScriptVariables.Text.ColorPicker + '<pre>  </pre></label><input id="ColorPicker" style="background: transparent; border: 0; user-select: all;" type="color" value="#eeeeee"/></td></tr>')
-    [void]$HTML.AppendLine('<tr><td>')
-    [void]$HTML.AppendLine('<form id="frmUpdateCSS" action="/ManageLink?UpdateCSS" method="POST" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '">')
-    [void]$HTML.AppendLine('<table class="innertable">')
-    [void]$HTML.AppendLine('<tr><td align="left"><label for "EditTheme">' + $ScriptVariables.Text.SelectTheme + '</td><td align="right"><select name="EditTheme" style="width: 200px;" class="SelLang" onChange="ChooseThemeToEdit(this.value)">' + $(Get-ThemeOptions -List -SelectedThemeToEdit $SelectedThemeToEdit) + '</select></td></tr>')
-    [void]$HTML.AppendLine('</table>')
-    [void]$HTML.AppendLine('</td></tr>')
-    [void]$HTML.AppendLine('<tr><td>')
-    [void]$HTML.AppendLine('<table align="center" data-name="mytable" id="filteredTable" class="hover innerTable">')
-    foreach ( $obj in $ConvertedCSS.Keys | Sort ) {
-        $Type = $null
-        if ( $obj.trim() -match "^\." ) { $Type = ' <i><font color="#aaa">(class)</font></i>' }
-        if ( $obj.trim() -match "^#" ) { $Type += ' <i><font color="#aaa">(id)</font></i>' }
-        if ( $obj.trim() -match "^[a-z0-9]+" ) { $Type += ' <i><font color="#aaa">(element)</font></i>' }
-        if ( $obj.trim() -match "^[a-z0-9]*[\s]([a-z0-9]\s?){0,5}" ) { $Type += ' <i><font color="#aaa">(combinator)</font></i>' }
-        if ( $obj.trim() -match "[^:]:{1}[^:]" ) { $Type += ' <i><font color="#aaa">(pseudo class)</font></i>' }
-        if ( $obj.trim() -match "::" ) { $Type += ' <i><font color="#aaa">(pseudo element)</font></i>' }
-        if ( $obj.trim() -match "\[.*\]" ) { $Type += ' <i><font color="#aaa">(attribute)</font></i>' }
-        [void]$HTML.AppendLine('<tr><td colspan=2 id="CSSHeader"><b>' + $obj.trim() + $Type + '</b></td></tr>')
-        foreach ( $childobj in $ConvertedCSS.$obj.Keys | Sort ) {
-            if ( $childobj.trim() -notmatch "(\/\*|\*\/)" ) {
-                if ( $ConvertedCSS.$obj.$childobj.trim() -match "#[0-9a-f]{3,6}" ) {
-                    $ColorMatches = ([regex]::matches($($ConvertedCSS.$obj.$childobj.trim()),"#[0-9a-f]{3,6}")).Value
-                    $BackgroundCOlor = $ConvertedActiveCSS.($ConvertedActiveCSS.keys | where { $_ -match "input\[type\=text\],\sinput\[type\=select\]" }).background
-                    if ( $ColorMatches.Count -eq 1 )  {
-                        $Color = 'style="background: linear-gradient(0.33turn, ' + $BackgroundCOlor + ' 85%, ' + $ColorMatches + ');"'
-                    }
-                    elseif ( $ColorMatches.Count -eq 2 ) {
-                        $Color = 'style="background: linear-gradient(0.33turn, ' + $BackgroundCOlor + ' 85%, ' + $ColorMatches[1] + ' 50%, ' + $ColorMatches[0] + ');"'
-                    }
-                }
-                else { $Color = $null }
-                [void]$HTML.AppendLine('<tr><td style="width: 50%;" align="left" id="cssValue">' + $childobj.trim() + '</td><td style="width: 50%;" align="right"><input ' + $Color + ' type="text" name="' + $obj + '_____' + $childobj + '" value="' + $ConvertedCSS.$obj.$childobj.trim() + '"/></td></tr>')
-            }
-        }
-    }
-    [void]$HTML.AppendLine('</td></tr>')
-    [void]$HTML.AppendLine('<tr><td style="width: 50%;" align="left"><b>' + $ScriptVariables.Text.NewCSSTheme + '</b></td><td style="width: 50%;" align="right"><input type="text" name="NewCSSTheme" placeholder="' + $ScriptVariables.Text.PhdNewCSSTheme + '" pattern="' + $ScriptVariables.Regex.RgxNewCSSName + '"/></td></tr>')
-    [void]$HTML.AppendLine('</form>')
-    [void]$HTML.AppendLine('</table>')
-    [void]$HTML.AppendLine('<tr><td align="right"><input class="btn" form="frmUpdateCSS" type="Submit" value="' + $ScriptVariables.Text.SaveBtn + '"></td></tr>')
 }
 elseif ( $RequestArgs -match '^Text$' ) {
     if ( ! $Admin ) { exit }
