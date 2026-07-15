@@ -37,7 +37,7 @@ public class RateLimitingMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // Get real client IP - check X-Forwarded-For first (IIS/proxy scenarios)
+        // Get validated client IP (already processed by UseForwardedHeaders middleware)
         var remoteIp = GetClientIpAddress(context);
 
         // Bypass rate limiting for localhost if configured
@@ -97,27 +97,16 @@ public class RateLimitingMiddleware
     }
 
     /// <summary>
-    /// Get the real client IP address, checking forwarded headers for proxy/IIS scenarios
+    /// Get the real client IP address from the validated RemoteIpAddress.
+    /// UseForwardedHeaders() middleware has already processed X-Forwarded-For headers
+    /// and set RemoteIpAddress to the verified real client IP.
     /// </summary>
     private string GetClientIpAddress(HttpContext context)
     {
-        // Check X-Forwarded-For header (set by IIS/reverse proxies)
-        var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(forwardedFor))
-        {
-            // X-Forwarded-For can contain multiple IPs (client, proxy1, proxy2...)
-            // Take the first one (original client)
-            var ips = forwardedFor.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (ips.Length > 0)
-            {
-                _logger.LogDebug("Using X-Forwarded-For IP: {IP}", ips[0]);
-                return ips[0];
-            }
-        }
-
-        // Fallback to remote IP address
+        // Use the already-validated RemoteIpAddress set by UseForwardedHeaders()
+        // This prevents attackers from bypassing rate limits by spoofing X-Forwarded-For
         var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        _logger.LogDebug("Using RemoteIpAddress: {IP}", remoteIp);
+        _logger.LogDebug("Rate limiting using validated IP: {IP}", remoteIp);
         return remoteIp;
     }
 
