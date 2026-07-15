@@ -135,23 +135,66 @@ public class SecurityMiddleware
     }
 
     /// <summary>
-    /// Get or create a session ID for the user
+    /// Get or create a session ID for the user.
+    /// Validates format and binds to authenticated user to prevent session fixation attacks.
     /// </summary>
-    private static string GetOrCreateSessionId(HttpContext context)
+    private string GetOrCreateSessionId(HttpContext context)
     {
-        // Try to get from cookie
+        var username = context.User.FindFirst(ClaimTypes.Name)?.Value ?? "anonymous";
+
+        // Try to get existing session from cookie
         if (context.Request.Cookies.TryGetValue("SessionId", out var sessionId))
         {
-            return sessionId;
+            // Validate session ID format (must be a valid GUID)
+            if (Guid.TryParse(sessionId, out var sessionGuid))
+            {
+                // Additional validation: session must be bound to current user
+                var expectedSessionPrefix = GenerateUserSessionPrefix(username);
+
+                // Check if this session belongs to the current user
+                if (context.Request.Cookies.TryGetValue("SessionUser", out var sessionUser))
+                {
+                    if (sessionUser == expectedSessionPrefix)
+                    {
+                        _logger.LogDebug("Valid session found for user {User}: {SessionId}", username, sessionId);
+                        return sessionId;
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Session fixation attempt detected - session user mismatch. User: {User}, SessionUser: {SessionUser}",
+                            username, sessionUser);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Session validation failed - no user binding found for session {SessionId}",
+                        sessionId);
+                }
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Invalid session ID format rejected (not a valid GUID): {SessionId}",
+                    sessionId.Length > 50 ? sessionId.Substring(0, 50) + "..." : sessionId);
+            }
+
+            // Invalid or mismatched session - invalidate it
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                _csrfTokenService.InvalidateSession(sessionId);
+            }
         }
 
         // Generate new session ID
-        sessionId = Guid.NewGuid().ToString();
+        var newSessionId = Guid.NewGuid().ToString();
+        var userSessionPrefix = GenerateUserSessionPrefix(username);
 
-        // Store in cookie (HTTP-only, secure)
+        // Store session ID in cookie (HTTP-only, secure)
         context.Response.Cookies.Append(
             "SessionId",
-            sessionId,
+            newSessionId,
             new Microsoft.AspNetCore.Http.CookieOptions
             {
                 HttpOnly = true,
@@ -160,7 +203,31 @@ public class SecurityMiddleware
                 Expires = DateTimeOffset.UtcNow.AddHours(1)
             });
 
-        return sessionId;
+        // Store user binding in separate cookie
+        context.Response.Cookies.Append(
+            "SessionUser",
+            userSessionPrefix,
+            new Microsoft.AspNetCore.Http.CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict,
+                Expires = DateTimeOffset.UtcNow.AddHours(1)
+            });
+
+        _logger.LogInformation("New session created for user {User}: {SessionId}", username, newSessionId);
+        return newSessionId;
+    }
+
+    /// <summary>
+    /// Generate a hash prefix for the user to bind sessions without storing the username in plain text
+    /// </summary>
+    private static string GenerateUserSessionPrefix(string username)
+    {
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(username));
+        // Use first 16 bytes (128 bits) for compact storage
+        return Convert.ToBase64String(hashBytes, 0, 16);
     }
 
     /// <summary>
