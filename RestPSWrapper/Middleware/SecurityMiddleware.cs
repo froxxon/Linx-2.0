@@ -14,7 +14,6 @@ public class SecurityMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<SecurityMiddleware> _logger;
     private readonly ICsrfTokenService _csrfTokenService;
-    private readonly ISecurityHeaderService _securityHeaderService;
     private readonly ScriptVariablesConfig _config;
     private readonly HashSet<string> _trustedOrigins;
     private readonly HashSet<string> _csrfBypassPaths;
@@ -23,13 +22,11 @@ public class SecurityMiddleware
         RequestDelegate next,
         ILogger<SecurityMiddleware> logger,
         ICsrfTokenService csrfTokenService,
-        ISecurityHeaderService securityHeaderService,
         IOptions<ScriptVariablesConfig> options)
     {
         _next = next;
         _logger = logger;
         _csrfTokenService = csrfTokenService;
-        _securityHeaderService = securityHeaderService;
         _config = options.Value;
         _trustedOrigins = ParseTrustedOrigins();
         _csrfBypassPaths = ParseCsrfBypassPaths();
@@ -49,19 +46,11 @@ public class SecurityMiddleware
             return;
         }
 
-        // 2. Generate CSP nonce for security headers
-        var nonce = GenerateSecureNonce();
-        context.Items["CspNonce"] = nonce;
-
-        // 3. Apply security headers (CSP, X-Frame-Options, etc.) and store protected header names
-        var protectedHeaders = _securityHeaderService.ApplySecurityHeaders(context.Response, nonce);
-        context.Items["ProtectedHeaders"] = protectedHeaders;
-
-        // 4. Get or create session ID
+        // 2. Get or create session ID
         var sessionId = GetOrCreateSessionId(context);
         context.Items["SessionId"] = sessionId;
 
-        // 5. Validate CSRF token for state-changing requests (BEFORE generating new token)
+        // 3. Validate CSRF token for state-changing requests (BEFORE generating new token)
         if (_config.RequireCsrfToken && IsStateChangingRequest(context.Request.Method) && !IsCsrfBypassPath(context.Request.Path))
         {
             if (!ValidateCsrfToken(context, sessionId))
@@ -77,7 +66,7 @@ public class SecurityMiddleware
             }
         }
 
-        // 6. Generate new CSRF token for next request (always done, regardless of request type)
+        // 4. Generate new CSRF token for next request (always done, regardless of request type)
         var newToken = _csrfTokenService.GenerateToken(sessionId);
         context.Response.Headers[_config.CsrfTokenHeaderName] = newToken;
 
@@ -306,16 +295,4 @@ public class SecurityMiddleware
         return _csrfBypassPaths.Contains(path);
     }
 
-    /// <summary>
-    /// Generate cryptographically secure nonce for CSP
-    /// </summary>
-    private static string GenerateSecureNonce()
-    {
-        var nonceBytes = new byte[16];
-        using (var rng = RandomNumberGenerator.Create())
-        {
-            rng.GetBytes(nonceBytes);
-        }
-        return Convert.ToBase64String(nonceBytes);
     }
-}

@@ -131,6 +131,9 @@ function Invoke-StartListener {
     }
 
     try {
+        # SECURITY: Bind to localhost only for network isolation
+        # $ScriptVariables.ShortURL should always be "localhost" (configured in base_settings.json)
+        # Backend is not exposed externally - RestPSWrapper provides the public interface
         $listener.Prefixes.Add("$($Prefix)$($ScriptVariables.ShortURL):$Port/")
         $listener.Start()
         $Host.UI.RawUI.WindowTitle = "RestPS - $Prefix - Port: $Port"
@@ -209,6 +212,18 @@ function Start-RestPSListener {
     $script:ValidateClient = $true
     if ($pscmdlet.ShouldProcess("Starting .Net.HttpListener.")) {
         $script:listener = New-Object System.Net.HttpListener
+
+        # SECURITY NOTE: Anonymous authentication is used by design
+        # This PowerShell backend binds to localhost-only (base_settings.json: "ShortURL": "localhost")
+        # Network isolation is the primary security boundary - backend is not exposed externally
+        # The .NET wrapper (RestPSWrapper) provides:
+        #   - Authentication (Kerberos/Negotiate)
+        #   - Authorization
+        #   - CSRF protection
+        #   - Rate limiting
+        #   - Security headers
+        # The wrapper sends X-Request-Signature header with HMAC-SHA256 signature of request
+        # TODO: Add signature validation in this backend for defense-in-depth (future enhancement)
         $listener.AuthenticationSchemes = 'Anonymous'
         $listener.UnsafeConnectionNtlmAuthentication = $true
         $listener.IgnoreWriteExceptions = $true

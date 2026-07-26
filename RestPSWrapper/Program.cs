@@ -222,13 +222,16 @@ app.UseMiddleware<RequestIdMiddleware>();
 app.UseMiddleware<RequestSizeLimitMiddleware>();
 app.UseMiddleware<RateLimitingMiddleware>();
 
+// Apply security headers BEFORE authentication so auth responses (401/403) have headers
+app.UseMiddleware<SecurityHeaderMiddleware>();
+
 // Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Application middleware
+// Application middleware (CSRF & Origin validation after auth)
 app.UseMiddleware<RequestLoggingMiddleware>();
-app.UseMiddleware<SecurityMiddleware>();  // Unified security: CSRF + Origin + Headers
+app.UseMiddleware<SecurityMiddleware>();  // CSRF validation & Origin checks
 
 app.MapControllers();
 

@@ -7,5 +7,6 @@ public interface IPowerShellProxyService
         string path,
         string? queryString,
         string? body,
+        string? contentType = null,
         Dictionary<string, string>? userHeaders = null);
 }

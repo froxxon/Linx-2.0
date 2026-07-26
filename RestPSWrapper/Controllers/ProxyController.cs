@@ -75,9 +75,12 @@ public class ProxyController : ControllerBase
         // Get user context and create secure headers
         var userHeaders = await _userContextService.GetUserHeadersAsync(User);
         var userName = userHeaders.GetValueOrDefault("X-Authenticated-User") ?? "Unknown";
-        
-        // SECURITY FIX #6: Include body length in signature to prevent replay attacks on similar requests
-        // Also handle null/empty bodies distinctly
+
+        // SECURITY: Generate HMAC-SHA256 signature for request authentication
+        // Signature includes: user | method | path | body length | body content
+        // This prevents tampering and replay attacks on similar requests
+        // The PowerShell backend currently relies on localhost-only network isolation
+        // TODO: Backend signature validation will be added in a future enhancement
         var bodyForSignature = string.IsNullOrEmpty(body) ? "[EMPTY]" : body;
         var bodyLength = body?.Length ?? 0;
         var signatureData = $"{userName}|{Request.Method}|{path}|{bodyLength}|{bodyForSignature}";
@@ -87,12 +90,16 @@ public class ProxyController : ControllerBase
         _logger.LogInformation("Proxying {Method} {Path} for user {User} with {BodyLength} bytes",
             Request.Method, path, userName, body.Length);
 
+        // Get original Content-Type to preserve it when forwarding to backend
+        var requestContentType = Request.ContentType;
+
         // Forward request to PowerShell backend
         var (statusCode, responseBody, headers) = await _proxyService.ForwardRequestAsync(
             Request.Method,
             path,
             Request.QueryString.Value,
             body,
+            requestContentType,
             userHeaders);
 
         // Get protected headers from SecurityMiddleware (headers set from appsettings.json)

@@ -29,6 +29,7 @@ public class PowerShellProxyService : IPowerShellProxyService
         string path,
         string? queryString,
         string? body,
+        string? contentType = null,
         Dictionary<string, string>? userHeaders = null)
     {
         try
@@ -55,7 +56,9 @@ public class PowerShellProxyService : IPowerShellProxyService
 
             if (!string.IsNullOrEmpty(body))
             {
-                request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+                // Use provided content type, default to application/json if not specified
+                var mediaType = string.IsNullOrEmpty(contentType) ? "application/json" : contentType;
+                request.Content = new StringContent(body, System.Text.Encoding.UTF8, mediaType);
             }
 
             if (userHeaders != null)

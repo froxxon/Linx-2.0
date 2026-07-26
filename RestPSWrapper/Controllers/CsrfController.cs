@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using RestPSWrapper.Configuration;
 using RestPSWrapper.Services;
 
 namespace RestPSWrapper.Controllers;
@@ -15,11 +17,16 @@ public class CsrfController : ControllerBase
 {
     private readonly ICsrfTokenService _csrfTokenService;
     private readonly ILogger<CsrfController> _logger;
+    private readonly ScriptVariablesConfig _config;
 
-    public CsrfController(ICsrfTokenService csrfTokenService, ILogger<CsrfController> logger)
+    public CsrfController(
+        ICsrfTokenService csrfTokenService, 
+        ILogger<CsrfController> logger,
+        IOptions<ScriptVariablesConfig> options)
     {
         _csrfTokenService = csrfTokenService;
         _logger = logger;
+        _config = options.Value;
     }
 
     /// <summary>
@@ -57,7 +64,7 @@ public class CsrfController : ControllerBase
         { 
             token = token,
             headerName = "X-CSRF-Token",
-            expiresIn = "3600 seconds",
+            expiresIn = $"{_config.CsrfTokenExpirationSeconds} seconds",
             usage = "Include this token in the X-CSRF-Token header for POST/PUT/PATCH/DELETE requests"
         });
     }
