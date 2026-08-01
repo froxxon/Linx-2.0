@@ -57,8 +57,16 @@ public class PowerShellProxyService : IPowerShellProxyService
             if (!string.IsNullOrEmpty(body))
             {
                 // Use provided content type, default to application/json if not specified
-                var mediaType = string.IsNullOrEmpty(contentType) ? "application/json" : contentType;
-                request.Content = new StringContent(body, System.Text.Encoding.UTF8, mediaType);
+                var contentTypeValue = string.IsNullOrEmpty(contentType) ? "application/json" : contentType;
+
+                // Create StringContent with just the media type (without parameters)
+                // StringContent constructor doesn't accept parameters in the mediaType argument
+                var content = new StringContent(body, System.Text.Encoding.UTF8);
+
+                // Set the full Content-Type header (including parameters like boundary) manually
+                content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(contentTypeValue);
+
+                request.Content = content;
             }
 
             if (userHeaders != null)
