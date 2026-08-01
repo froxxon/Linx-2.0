@@ -13,23 +13,31 @@ Linx 2.0 is a PowerShell-based intranet link-portal that runs on top of the Rest
 
 ---
 
-## 🔴 HIGH – Any Authenticated User Can Create or Modify Shared Links
+## ✅ RESOLVED – Any Authenticated User Can Create or Modify Shared Links
 
 **File:** `endpoints/Management.ps1` – `Type = 'new'` and `Type = 'update'` branches
 
-`Management.ps1` resolves `$EditAccess` and `$AdminAccess` (lines 12–21) but never checks either flag before writing to the shared links file:
+**Status:** ✅ **FIXED**
 
+**Original Issue:**
+`Management.ps1` resolved `$EditAccess` and `$AdminAccess` but never checked either flag before writing to the shared links file, allowing any authenticated user to add, modify, enable/disable, or change the role/visibility of every shared link.
+
+**Fix Applied:**
 ```powershell
-# Type = 'new' – no $EditAccess check
-$SaveString | out-file $ScriptVariables.LinksFilePath -Encoding ... -Append
+# Type = 'new' - Now checked (line 114)
+if ( $EditAccess -or $AdminAccess ) {
+    # ... write to $ScriptVariables.LinksFilePath
+}
 
-# Type = 'update' – no $EditAccess check
-(Get-Content "$($ScriptVariables.LinksFilePath)").replace($Find, $Replace) | Set-Content $ScriptVariables.LinksFilePath ...
+# Type = 'update' - Now checked (line 143)
+elseif ( $ID.length -eq 8 ) {
+    if ( $EditAccess -or $AdminAccess ) {
+        # ... update shared links
+    }
+}
 ```
 
-Any user that can reach the `/ManageLink` POST endpoint (i.e., every user whose Windows account resolves in AD) can add, modify, enable/disable, or change the role/visibility of every shared link in the catalogue.
-
-**Fix:** Wrap both the `new` (non-personal) and `update` (8-digit ID) code paths in `if ( $EditAccess -or $AdminAccess )` guards, and return a 403-equivalent response for unauthorised callers.
+Personal links (7-digit ID) remain accessible to all users as designed.
 
 ---
 
@@ -61,23 +69,27 @@ An attacker who can control the `X-Authenticated-User` header could pass a value
 
 ---
 
-## 🔴 HIGH – URL Field Stored Without Server-Side Validation (Stored XSS)
+## ✅ RESOLVED – URL Field Stored Without Server-Side Validation (Stored XSS)
 
 **File:** `endpoints/Management.ps1` – `URL` attribute
 
-Every other user-supplied field (Name, Description, Category, Role, Tags, Contact, Notes) is validated against a regex pattern before being accepted. The `URL` field is stored unconditionally:
+**Status:** ✅ **FIXED**
 
+**Original Issue:**
+The `URL` field was stored unconditionally without validation, allowing attackers to store `javascript:` or `data:text/html` URIs that would trigger XSS when clicked.
+
+**Fix Applied:**
 ```powershell
-URL { $LinkURL = $attrib.value }
+URL { 
+    if ([Uri]::TryCreate($cleanValue, [UriKind]::Absolute, [ref]$outUri) -and ($outUri.Scheme -in @('http', 'https'))) {
+        $LinkURL = $outUri.AbsoluteUri
+    } else {
+        $LinkURL = $null # Invalid URL rejected
+    }
+}
 ```
 
-This allows an attacker with any write access to store a `javascript:` or `data:text/html` URI. Every user who later clicks that link in `Get-Links.ps1`, `Get-LinksAdmin.ps1`, or `Get-LinksPersonal.ps1` will trigger script execution in their browser, as the URL is placed directly into an `href` attribute without encoding:
-
-```powershell
-'<a href="' + $Link.URL + '" target="_blank"/>' + $Link.Name + '</a>'
-```
-
-**Fix:** Validate `$LinkURL` against a strict allowlist of URL schemes (e.g., `^https?://`). Reject any value that does not match before writing it to the CSV.
+Only `http://` and `https://` schemes are now accepted. Invalid URLs (including `javascript:`, `data:`, `file:`, etc.) are rejected.
 
 ---
 
@@ -204,18 +216,18 @@ The regex patterns for these fields block `<`, `>`, and `/`, which prevents basi
 
 ## Summary Table
 
-| Severity | Issue | Priority |
+| Severity | Issue | Status |
 |---|---|---|
-| 🔴 HIGH | Any authenticated user can create or modify shared links (no EditAccess check) | **CRITICAL** |
-| 🔴 HIGH → 🟡 MEDIUM | LDAP injection via unsanitised `$CurrentUser` in ADSI filter | Medium (mitigated by transport layer) |
-| 🔴 HIGH | URL field stored without validation — stored XSS via `javascript:` URI | **CRITICAL** |
-| 🟡 MEDIUM | Path traversal via `$CurrentUser` in file paths | Medium |
-| 🟡 MEDIUM | Open redirect via unvalidated `$Source` in theme-selection form action | Medium |
-| 🟡 MEDIUM | `EditTheme` not validated — admin-level path traversal to overwrite files | Medium |
-| 🟡 MEDIUM | Group membership checked with `-match` (regex) instead of exact equality | Medium |
-| 🟠 LOW | Log injection via unsanitised `$CurrentUser` and `$LinkName` | Low |
-| 🟠 LOW | Hardcoded absolute module path in `Internal-CmdLets.psm1` | Low |
-| 🟠 LOW | Link field values inserted into HTML without entity encoding | Low |
+| 🔴 HIGH → ✅ FIXED | Any authenticated user can create or modify shared links | **RESOLVED** - EditAccess checks implemented |
+| 🔴 HIGH → 🟡 MEDIUM | LDAP injection via unsanitised `$CurrentUser` | **MITIGATED** - Transport layer protection + username regex validation |
+| 🔴 HIGH → ✅ FIXED | URL field stored without validation — stored XSS | **RESOLVED** - http/https scheme validation |
+| 🟡 MEDIUM | Path traversal via `$CurrentUser` in file paths | **MITIGATED** - Username regex validation (line 4) |
+| 🟡 MEDIUM | Open redirect via unvalidated `$Source` in theme-selection form action | Open |
+| 🟡 MEDIUM | `EditTheme` not validated — admin-level path traversal to overwrite files | Open (needs verification) |
+| 🟡 MEDIUM | Group membership checked with `-match` (regex) instead of exact equality | Open |
+| 🟠 LOW | Log injection via unsanitised `$CurrentUser` and `$LinkName` | Partial (username validated, LinkName needs encoding) |
+| 🟠 LOW | Hardcoded absolute module path in `Internal-CmdLets.psm1` | Open |
+| 🟠 LOW | Link field values inserted into HTML without entity encoding | **PARTIALLY RESOLVED** - Name, Description, Notes now encoded |
 
 ---
 
@@ -226,16 +238,24 @@ The regex patterns for these fields block `<`, `>`, and `/`, which prevents basi
 - Comprehensive defense-in-depth
 - Request signing ready for backend validation
 
-**Application Layer (Linx PowerShell):** ⚠️ **NEEDS ATTENTION**
-- **2 CRITICAL issues** require immediate fixes
-- **5 MEDIUM issues** should be addressed before production
-- **3 LOW issues** can be addressed in future iterations
+**Application Layer (Linx PowerShell):** ✅ **SIGNIFICANTLY IMPROVED**
+- **2 CRITICAL HIGH issues** ✅ **RESOLVED**
+- **1 HIGH issue downgraded to MEDIUM** (mitigated by transport layer)
+- **3 MEDIUM issues** remain open (down from 5)
+- **3 LOW issues** remain (1 partially resolved)
 
-**Recommended Immediate Actions:**
-1. **FIX CRITICAL:** Add `$EditAccess` checks to Management.ps1
-2. **FIX CRITICAL:** Validate URL field against `^https?://` allowlist
-3. **ENABLE:** Backend signature validation (see `SIGNATURE-VALIDATION.md`)
-4. **REVIEW:** Input validation and sanitization throughout application layer
+**Recent Fixes:**
+1. ✅ **EditAccess enforcement** - Shared link creation/modification now requires edit permissions
+2. ✅ **URL validation** - Only http/https schemes accepted, XSS prevention
+3. ✅ **Username validation** - Regex pattern prevents path traversal characters
+4. ✅ **HTML encoding** - Name, Description, Notes fields now encoded
+
+**Remaining Priority Actions:**
+1. **MEDIUM:** Validate `$Source` parameter in theme selection
+2. **MEDIUM:** Verify `EditTheme` validation (may already be fixed)
+3. **MEDIUM:** Change `-match` to `-eq` for group membership checks
+4. **LOW:** Remove hardcoded module path
+5. **LOW:** Complete HTML encoding for all fields
 
 ---
 
