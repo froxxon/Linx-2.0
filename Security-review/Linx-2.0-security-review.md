@@ -1,6 +1,15 @@
 # Security Review – Linx 2.0
 
-Linx 2.0 is a PowerShell-based intranet link-portal that runs on top of the RestPS listener and relies on the C# RestPSWrapper for transport-level security (authentication, CSRF, rate limiting, and security headers). The findings below are specific to the Linx application layer — the PowerShell endpoints, data handling, and access-control logic.
+**Last Updated:** January 2025
+
+Linx 2.0 is a PowerShell-based intranet link-portal that runs on top of the RestPS listener and relies on the C# RestPSWrapper for transport-level security (authentication, CSRF, rate limiting, and security headers).
+
+**Transport-Layer Security Status:** ✅ **STRONG** - See `RestPSWrapper-security-review.md` for details:
+- 9/10 transport-level issues resolved (rate limiting, headers, CSP, request validation, etc.)
+- Request signing implemented and ready for backend validation
+- Comprehensive security architecture documented
+
+**This review focuses on:** Application-layer security - PowerShell endpoints, data handling, access control, and Linx-specific business logic.
 
 ---
 
@@ -28,6 +37,8 @@ Any user that can reach the `/ManageLink` POST endpoint (i.e., every user whose 
 
 **File:** `modules/Internal-CmdLets.psm1` – `Get-MainUser`
 
+**Status:** ⚠️ **MITIGATED BY TRANSPORT LAYER** (still requires code fix)
+
 The ADSI filter is built by string interpolation from the unvalidated `$CurrentUser` value:
 
 ```powershell
@@ -35,9 +46,18 @@ The ADSI filter is built by string interpolation from the unvalidated `$CurrentU
     "(&(objectCategory=User)(samaccountname=$CurrentUser))")).FindOne()
 ```
 
-An attacker who can control the `X-Authenticated-User` header (possible if the PS backend port is directly reachable — see the RestPSWrapper review) can pass a value such as `*` or `x)(|(samaccountname=*)` to match arbitrary directory objects. Because the return value of `Get-MainUser` is used as the primary authorisation gate throughout every endpoint (`if ( !$MainUser ) { return … }`), a successful injection could allow an unauthenticated caller to impersonate any user.
+An attacker who can control the `X-Authenticated-User` header could pass a value such as `*` or `x)(|(samaccountname=*)` to match arbitrary directory objects or impersonate any user.
+
+**Current Mitigation:**
+- ✅ Backend binds to `localhost` only - not directly accessible externally
+- ✅ RestPSWrapper validates authentication and sets `X-Authenticated-User` from trusted Kerberos/Negotiate token
+- ✅ Request signatures can now be validated to ensure requests came from wrapper
+
+**Remaining Risk:** If backend signature validation is not enabled, a local attacker with access to `localhost:8080` could craft malicious headers.
 
 **Fix:** Escape LDAP special characters in `$CurrentUser` before embedding it in the filter (replace `*`, `(`, `)`, `\`, `NUL` with their RFC 4515 escape sequences), or validate that the value matches a strict alphanumeric/domain pattern before the query.
+
+**Priority:** MEDIUM (was HIGH, downgraded due to network isolation + wrapper authentication)
 
 ---
 
@@ -184,15 +204,43 @@ The regex patterns for these fields block `<`, `>`, and `/`, which prevents basi
 
 ## Summary Table
 
-| Severity | Issue |
-|---|---|
-| 🔴 HIGH | Any authenticated user can create or modify shared links (no EditAccess check) |
-| 🔴 HIGH | LDAP injection via unsanitised `$CurrentUser` in ADSI filter |
-| 🔴 HIGH | URL field stored without validation — stored XSS via `javascript:` URI |
-| 🟡 MEDIUM | Path traversal via `$CurrentUser` in file paths |
-| 🟡 MEDIUM | Open redirect via unvalidated `$Source` in theme-selection form action |
-| 🟡 MEDIUM | `EditTheme` not validated — admin-level path traversal to overwrite files |
-| 🟡 MEDIUM | Group membership checked with `-match` (regex) instead of exact equality |
-| 🟠 LOW | Log injection via unsanitised `$CurrentUser` and `$LinkName` |
-| 🟠 LOW | Hardcoded absolute module path in `Internal-CmdLets.psm1` |
-| 🟠 LOW | Link field values inserted into HTML without entity encoding |
+| Severity | Issue | Priority |
+|---|---|---|
+| 🔴 HIGH | Any authenticated user can create or modify shared links (no EditAccess check) | **CRITICAL** |
+| 🔴 HIGH → 🟡 MEDIUM | LDAP injection via unsanitised `$CurrentUser` in ADSI filter | Medium (mitigated by transport layer) |
+| 🔴 HIGH | URL field stored without validation — stored XSS via `javascript:` URI | **CRITICAL** |
+| 🟡 MEDIUM | Path traversal via `$CurrentUser` in file paths | Medium |
+| 🟡 MEDIUM | Open redirect via unvalidated `$Source` in theme-selection form action | Medium |
+| 🟡 MEDIUM | `EditTheme` not validated — admin-level path traversal to overwrite files | Medium |
+| 🟡 MEDIUM | Group membership checked with `-match` (regex) instead of exact equality | Medium |
+| 🟠 LOW | Log injection via unsanitised `$CurrentUser` and `$LinkName` | Low |
+| 🟠 LOW | Hardcoded absolute module path in `Internal-CmdLets.psm1` | Low |
+| 🟠 LOW | Link field values inserted into HTML without entity encoding | Low |
+
+---
+
+## Overall Security Posture
+
+**Transport Layer (RestPSWrapper):** ✅ **STRONG**
+- 9/10 issues resolved
+- Comprehensive defense-in-depth
+- Request signing ready for backend validation
+
+**Application Layer (Linx PowerShell):** ⚠️ **NEEDS ATTENTION**
+- **2 CRITICAL issues** require immediate fixes
+- **5 MEDIUM issues** should be addressed before production
+- **3 LOW issues** can be addressed in future iterations
+
+**Recommended Immediate Actions:**
+1. **FIX CRITICAL:** Add `$EditAccess` checks to Management.ps1
+2. **FIX CRITICAL:** Validate URL field against `^https?://` allowlist
+3. **ENABLE:** Backend signature validation (see `SIGNATURE-VALIDATION.md`)
+4. **REVIEW:** Input validation and sanitization throughout application layer
+
+---
+
+## Related Documentation
+
+- **Transport Security:** `RestPSWrapper-security-review.md`
+- **Architecture:** `SECURITY.md`
+- **Backend Signature Validation:** `Linx/SIGNATURE-VALIDATION.md`
