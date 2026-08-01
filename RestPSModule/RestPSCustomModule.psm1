@@ -36,11 +36,35 @@ function Invoke-RequestRouter {
     $Route = ($Routes | Where-Object {$_.RequestType -eq $RequestType -and $_.RequestURL -eq $RequestURL})
     if ($null -ne $Route) {
         # Process Request
-        $RequestCommand = Join-Path -Path $ScriptVariables.ScriptPath -ChildPath "endPoints\$($Route.RequestCommand)"
+        # Parse RequestCommand to separate script path from parameters
+        $RouteCommand = $Route.RequestCommand
+        $ScriptPath = $null
+        $ScriptParams = @()
+
+        if ($RouteCommand -match '\.ps1(\s|$)') {
+            # This is a PowerShell script - may have parameters
+            $parts = $RouteCommand -split '\s+', 2
+            $ScriptPath = $parts[0]
+            if ($parts.Count -gt 1) {
+                # Parse additional parameters from RequestCommand
+                $ScriptParams = $parts[1] -split '\s+'
+            }
+        }
+        else {
+            # Static file or other command
+            $ScriptPath = $RouteCommand
+        }
+
+        $RequestCommand = Join-Path -Path $ScriptVariables.ScriptPath -ChildPath "endPoints\$ScriptPath"
         set-location $PSScriptRoot
         if ($RequestCommand -match "\.ps1$") {
-            # Execute Endpoint Script
-            $CommandReturn = . $RequestCommand -RequestArgs $RequestArgs -Body $script:Body
+            # Execute Endpoint Script with parameters from RequestCommand + standard params
+            if ($ScriptParams.Count -gt 0) {
+                $CommandReturn = . $RequestCommand $ScriptParams -RequestArgs $RequestArgs -Body $script:Body
+            }
+            else {
+                $CommandReturn = . $RequestCommand -RequestArgs $RequestArgs -Body $script:Body
+            }
         }
         elseif ( $RequestCommand -match "(.css|.js|.jquery|.ttf|.eot|.woff|.woff2)$" ) {
             $CommandReturn = Get-Content $RequestCommand -Raw
