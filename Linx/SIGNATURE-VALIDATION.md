@@ -315,5 +315,5 @@ Write-Host "======================="
 
 - Wrapper signature generation: `RestPSWrapper/Services/SignatureService.cs`
 - Wrapper signature usage: `RestPSWrapper/Controllers/ProxyController.cs` (line 86-88)
-- Backend validation: `Linx/modules/Internal-CmdLets.psm1` (`Test-RequestSignature`)
+- Backend validation function: `RestPSModule/RestPSCustomModule.psm1` (`Test-RequestSignature`)
 - Security architecture: `SECURITY.md`
