@@ -3,22 +3,19 @@ param ( $RequestArgs )
 #region Get user information
     $CurrentUser = $null
     $CurrentUser = $($Request.Headers['X-Authenticated-User'] -replace ("$($ScriptVariables.Domain)\\",''))  
-    if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_]{1,64}$' ) { return $ScriptVariables.Text.AccessDenied }
+    if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_\$]{1,64}$' ) { return "$($ScriptVariables.Text.AccessDenied)" }
     
-    if ( $ScriptVariables.AllowPersonalTheme -eq $true ) {
-        $PersonalCSSLink = (Get-ChildItem ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-*.css_link')).BaseName
-    }
-    else { $PersonalCSSLink = $null }
+    try { '' | Out-File (Join-Path -Path $ScriptVariables.PersonalPath -ChildPath "$($CurrentUser).accesstime" ) } catch {}
+
+    $PersonalCSSLink = $null
+    if ( $ScriptVariables.AllowPersonalTheme -eq $true ) { $PersonalCSSLink = (Get-ChildItem (Join-Path -Path $ScriptVariables.PersonalPath -ChildPath "$($CurrentUser)-*.css_link")).BaseName }
     if ( $PersonalCSSLink ) {
-        if ( Test-Path ($ScriptVariables.ScriptPath + 'style\' + ($PersonalCSSLink -replace "$CurrentUser-",'') + '.css' ) ) {
-            $CSS = Get-Content ($ScriptVariables.ScriptPath + 'style\' + ($PersonalCSSLink -replace "$CurrentUser-",'') + '.css' )
+        if ( Test-Path (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath "style\$($PersonalCSSLink -replace "$CurrentUser-",'').css" ) ) {
+            $CSS = Get-Content (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath "style\$($PersonalCSSLink -replace "$CurrentUser-",'').css" )            
         }
-        else {
-            Remove-Item ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-*.css_link') -Force
-            $CSS = Get-Content $ScriptVariables.CSSpath
-        }
+        else { Remove-Item (Join-Path -Path $ScriptVariables.PersonalPath -ChildPath "$($CurrentUser)-*.css_link") -Force }
     }
-    else { $CSS = Get-Content $ScriptVariables.CSSpath }
+    if ( $null -eq $CSS ) { $CSS = Get-Content $ScriptVariables.CSSpath }
 
     $HTML = [System.Text.StringBuilder]::new()
     [void]$HTML.AppendLine($(Get-HTMLHead $CSS))
@@ -30,44 +27,59 @@ param ( $RequestArgs )
 #endregion
 #region Get additional rights in Linx
     foreach ( $group in $EditMembers ) {
-        if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
+        if ( $group -in $MainUser.memberof ) {
+            $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>'
+            break
+        }
     }
     if ( $MainUser.memberof -eq "$($ScriptVariables.EditGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
-    if ( !$AdminLink ) {
-        foreach ( $group in $AdminMembers ) {
-            if ( $group -in $MainUser.memberof ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
+    foreach ( $group in $AdminMembers ) {
+        if ( $group -in $MainUser.memberof ) {
+            $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>'
+            break
         }
-        if ( $MainUser.memberof -eq "$($ScriptVariables.AdminGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
     }
+    if ( $MainUser.memberof -eq "$($ScriptVariables.AdminGroup)" ) { $AdminLink = '<a href="' + $ScriptVariables.ServerURL + '/Admin">Admin</a>' }
 #endregion
 #region Get Links
-    $PersonalPath = "$($ScriptVariables.PersonalPath)\$CurrentUser.csv"
-    $Links        = Import-CSV $PersonalPath -Delimiter $ScriptVariables.CSVDelimiter
-    $Categories   = @()
-#endregion
-
+    $PersonalPath  = "$($ScriptVariables.PersonalPath)\$CurrentUser.csv"
+    $LinksPersonal = Import-CSV $PersonalPath -Delimiter $ScriptVariables.CSVDelimiter
+    #endregion
 $SelectThemes = Get-ThemeOptions $CurrentUser
 
 [void]$HTML.AppendLine('<header>')
 [void]$HTML.AppendLine('<nav align="left"><a href="' + $ScriptVariables.ServerURL + '/Admin?new">' + $ScriptVariables.Text.AdmNewLink + '</a><a href="' + $ScriptVariables.ServerURL + '/">' + $ScriptVariables.Text.StartPage + '</a>' + $AdminLink + '</nav>')
 if ( $ScriptVariables.AllowPersonalTheme -eq $true ) {
-    [void]$HTML.AppendLine('<div><select name="Theme" style="width: 200px;" class="SelTheme" onChange="SetTheme(this.value)">' + $SelectThemes + '</select></div>')
+    [void]$HTML.AppendLine('<div><select name="Theme" id="themeSelect" style="width: 200px;" class="SelTheme">' + $SelectThemes + '</select></div>')
 }
 [void]$HTML.AppendLine('</header>')
 [void]$HTML.AppendLine('<table id="main" align="center">')
 [void]$HTML.AppendLine('<tr><td>')
 [void]$HTML.AppendLine('<table align="center" class="innerTable">')
 if ( !$RequestArgs ) {
-    [void]$HTML.AppendLine('<tr><td><input type="text" id="inputFilter" onkeyup="filterFunctionMultiTables()" placeholder="' + $ScriptVariables.Text.FilterText + '" autofocus></td></tr>')
+    [void]$HTML.AppendLine('<tr><td><input type="text" id="inputFilter" placeholder="' + $ScriptVariables.Text.FilterText + '" autofocus></td></tr>')
     [void]$HTML.AppendLine('<tr><td>')
     [void]$HTML.AppendLine('<table align="center" data-name="mytable" id="filteredTable" class="hover innerTable">')
-    [void]$HTML.AppendLine('<tr><th align="left" width="35%" onclick="sortTableByAREF(0)">' + $ScriptVariables.Text.LblName + '</th><th width="35%" onclick="sortTable(1)">' + $ScriptVariables.Text.LblDescription + '</th><th width="15%" onclick="sortTable(2)">' + $ScriptVariables.Text.LblCategory + '</th><th width="15%"></th></tr>')
-    foreach ( $Link in $Links | Sort-Object Name ) {
+    [void]$HTML.AppendLine('<tr><th align="left" width="35%">' + $ScriptVariables.Text.LblName + '</th><th width="35%">' + $ScriptVariables.Text.LblDescription + '</th><th width="15%">' + $ScriptVariables.Text.LblCategory + '</th><th width="15%"></th></tr>')
+    foreach ( $Link in $LinksPersonal | Sort-Object Name ) {
         $EditColumn = '<td><a href="' + $ScriptVariables.ServerURL + '/Personal?' + $Link.ID + '">' + $ScriptVariables.Text.Edit + '</a></td>'
-        if ( $Link.Tags -ne '' ) { $TagTips = '<br><br><b>' + $ScriptVariables.Text.LblTags + ':</b><br>' + $($Link.Tags) }
-        else { $TagTips = '<br><br><b>' + $ScriptVariables.Text.LblTags + ':</b><br><font class="tooltipempty"><i>-</i></font>' }
-        if ( $Link.Notes -ne '' ) { $NotesTips = '<br><br><b>' + $ScriptVariables.Text.LblNotes + ':</b><br>' + $($Link.Notes) }
-        else { $NotesTips = '<br><br><b>' + $ScriptVariables.Text.LblNotes + ':</b><br><font class="tooltipempty"><i>-</i></font>' }
+        
+        $TagTips = $null
+        if ( $Link.Tags -ne '' ) {
+            $TagTips = '<br><br><b>' + $ScriptVariables.Text.LblTags + ':</b><br>' + $($Link.Tags)
+        }
+        else {
+            $TagTips = '<br><br><b>' + $ScriptVariables.Text.LblTags + ':</b><br><font class="tooltipempty"><i>-</i></font>'
+        }
+        
+        $NotesTips = $null
+        if ( $Link.Notes -ne '' ) {
+            $NotesTips = '<br><br><b>' + $ScriptVariables.Text.LblNotes + ':</b><br>' + $($Link.Notes)
+        }
+        else {
+            $NotesTips = '<br><br><b>' + $ScriptVariables.Text.LblNotes + ':</b><br><font class="tooltipempty"><i>-</i></font>'
+        }
+        
         $TooltipText = "$TagTips$NotesTips"
         [void]$HTML.AppendLine('<tr><td align="left"><div class="tooltip"><a href="' + $Link.URL + '" target="_blank"/>' + $Link.Name + '</a><span class="tooltiptext">' + $TooltipText + '</span></div></td><td>' + $Link.Description + '</td><td>' + $Link.Category + '</td><td class="hiddenColumn">' + $Link.Name + $Link.Tags + '</td>' + $EditColumn + '</tr>')
     }
@@ -77,11 +89,11 @@ if ( !$RequestArgs ) {
 elseif ( $RequestArgs -match '^[0-9]{7}$' ) {
     $Link = Select-String -Path $PersonalPath -Pattern $RequestArgs -Encoding $($ScriptVariables.Charset -replace '-','') | Select-Object -ExpandProperty Line | convertfrom-csv -Delimiter $ScriptVariables.CSVDelimiter -Header $((Get-Content $PersonalPath -First 1).Split($ScriptVariables.CSVDelimiter))
     $Categories = @{}
-    $($Links.Category | Sort-Object -Unique).ForEach({
-        $currCat = $_
-        $Categories.Add($currCat,@{ 
-            ItemCount = $( $Links.Category | Where { $_ -match $currCat }).Count
-            Short = $($currCat -Replace "$($ScriptVariables.Regex.RgxShortCategory)","")
+    ($LinksPersonal | Group-Object Category).ForEach({
+        $currCat = $_.Name
+        $Categories.Add($currCat, @{
+            ItemCount = $_.Count
+            Short     = $($currCat -replace "$($ScriptVariables.Regex.RgxShortCategory)","")
         })
     })
     $SelectCats = '<option value=""></option>'
@@ -103,19 +115,17 @@ elseif ( $RequestArgs -match '^[0-9]{7}$' ) {
     [void]$HTML.AppendLine('</table>')
     [void]$HTML.AppendLine('</td></tr>')
     [void]$HTML.AppendLine('<table class="innertable">')
-    [void]$HTML.AppendLine('<tr><td><a title="' + $ScriptVariables.Text.RemoveLinkWarning + '" href="/Personal?remove' + $RequestArgs + '" align="center" class="removelink">' + $ScriptVariables.Text.RemoveLink + '</a></td><td align="right"><button class="btn" type="button" onclick="window.location.href=`/Personal`">' + $ScriptVariables.Text.CancelBtn + '</button><input class="btn" type="Submit" form="frmSaveLink" value="' + $ScriptVariables.Text.UpdateBtn + '"></td></tr>')
+    [void]$HTML.AppendLine('<tr><td><a title="' + $ScriptVariables.Text.RemoveLinkWarning + '" href="/Personal?remove' + $RequestArgs + '" align="center" class="removelink">' + $ScriptVariables.Text.RemoveLink + '</a></td><td align="right"><button id="btnRemoveLink" class="btn" type="button">' + $ScriptVariables.Text.CancelBtn + '</button><input class="btn" type="Submit" form="frmSaveLink" value="' + $ScriptVariables.Text.UpdateBtn + '"></td></tr>')
     [void]$HTML.AppendLine('</table>')
     [void]$HTML.AppendLine('</td></tr>')
 }
 elseif ( $RequestArgs -match '^remove[0-9]{7}$' ) {
     $CurrentContent = $(Get-Content -Path $PersonalPath | Select-String -Pattern "^$($RequestArgs -replace 'remove','')\$($ScriptVariables.CSVDelimiter)" -Encoding $($ScriptVariables.Charset -replace '-','')).Line
-    $LinkName = $($CurrentContent.Split($ScriptVariables.CSVDelimiter).Trim())[1]
-    Set-Content -Path $PersonalPath -Encoding $($ScriptVariables.Charset -replace '-','') -Value (Get-Content -Path $PersonalPath -Encoding $($ScriptVariables.Charset -replace '-','') | Select-String -Pattern "$($RequestArgs -replace 'remove','')" -Encoding $($ScriptVariables.Charset -replace '-','') -NotMatch)
-    $CurrentContent = $null
-    [void]$HTML.AppendLine('<form id="AutoSubmit" action="/Personal" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>')
-    [void]$HTML.AppendLine('<script type="text/javascript" nonce="{{nonce}}">')
-    [void]$HTML.AppendLine('function formAutoSubmit () { var frm = document.getElementById("AutoSubmit"); frm.submit(); } window.onload = formAutoSubmit;')
-    [void]$HTML.AppendLine('</script>')
+    if ( $CurrentContent ) {
+        $LinkName = $($CurrentContent.Split($ScriptVariables.CSVDelimiter).Trim())[1]
+        Set-Content -Path $PersonalPath -Encoding $($ScriptVariables.Charset -replace '-','') -Value (Get-Content -Path $PersonalPath -Encoding $($ScriptVariables.Charset -replace '-','') | Select-String -Pattern "^$($RequestArgs -replace 'remove','')\$($ScriptVariables.CSVDelimiter)" -Encoding $($ScriptVariables.Charset -replace '-','') -NotMatch)
+        [void]$HTML.AppendLine('<form id="AutoSubmit" action="/Personal" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>')
+    }
 }
 else { exit }
 [void]$HTML.AppendLine( @"
@@ -123,105 +133,8 @@ else { exit }
     </td></tr>
   </table>
   $( if ( $ScriptVariables.ShowFooter -eq $true ) { '<img width="50em" style="vertical-align: middle;" src="data:image/png;base64, ' + $(Get-Content ($ScriptVariables.ScriptPath + 'images\linx_base64.txt')) + '"/><pre style="vertical-align: middle;"> version ' + $($ScriptVariables.Version) + '</pre>' })
-  <script nonce="{{nonce}}">
-    // Send with RequestArg when changing private Theme
-    function SetTheme(theme){location.href = "/?SelectTheme&" + theme + "&Personal";}
-
-    function filterFunctionMultiTables() {
-      var input, filter, table, tr, td, i,alltables;
-      alltables = document.querySelectorAll("table[data-name=mytable]");
-      input = document.getElementById("inputFilter");
-      filter = input.value.toUpperCase();
-      alltables.forEach(function(table){
-        tr = table.getElementsByTagName("tr");
-        for (i = 0; i < tr.length; i++) {
-          td = tr[i].getElementsByTagName("td")[3];
-          if (td) {
-            if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
-              tr[i].style.display = "";
-            } else {
-              tr[i].style.display = "none";
-            }
-          }       
-        }
-      });
-    }
-
-    function sortTable(n) {
-      var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-      table = document.getElementById("filteredTable");
-      switching = true;
-      dir = "asc";
-      while (switching) {
-        switching = false;
-        rows = table.rows;
-        for (i = 1; i < (rows.length - 1); i++) {
-          shouldSwitch = false;
-          x = rows[i].getElementsByTagName("TD")[n];
-          y = rows[i + 1].getElementsByTagName("TD")[n];
-          if (dir == "asc") {
-            if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
-              shouldSwitch = true;
-              break;
-            }
-          } else if (dir == "desc") {
-            if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
-              shouldSwitch = true;
-              break;
-            }
-          }
-        }
-        if (shouldSwitch) {
-          rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-          switching = true;
-          switchcount ++;
-        } else {
-          if (switchcount == 0 && dir == "asc") {
-            dir = "desc";
-            switching = true;
-          }
-        }
-      }
-    }
-
-    function sortTableByAREF(n) {
-      var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-      table = document.getElementById("filteredTable");
-      switching = true;
-      dir = "asc";
-      while (switching) {
-        switching = false;
-        rows = table.rows;
-        for (i = 1; i < (rows.length - 1); i++) {
-          shouldSwitch = false;
-          x = rows[i].getElementsByTagName("A")[n];
-          y = rows[i + 1].getElementsByTagName("A")[n];
-          if (dir == "asc") {
-            if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
-              shouldSwitch = true;
-              break;
-            }
-          } else if (dir == "desc") {
-            if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
-              shouldSwitch = true;
-              break;
-            }
-          }
-        }
-        if (shouldSwitch) {
-          rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-          switching = true;
-          switchcount ++;
-        } else {
-          if (switchcount == 0 && dir == "asc") {
-            dir = "desc";
-            switching = true;
-          }
-        }
-      }
-    }
-    //sortTableByAREF(0);
-  </script>
+  <script src="/personal.js" type="text/javascript" nonce="{{nonce}}"></script>
+  <script src="/scripts.js" type="text/javascript" nonce="{{nonce}}"></script>
 </body>
 </html>
 "@ )

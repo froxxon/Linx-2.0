@@ -1,5 +1,4 @@
-﻿import-module 'C:\RestPS\RestPSModule\RestPSCustomModule.psm1' -force
-function Get-HTMLHead {
+﻿function Get-HTMLHead {
 param ( $CSS )
 @"
 <html lang="{{PSVar_htmlLanguage}}">
@@ -18,113 +17,30 @@ $CSS
 }
 function Get-MainUser {
     param ( $CurrentUser )
-
     [array]$MainUser = (New-Object adsisearcher([adsi]"LDAP://$($ScriptVariables.OU_User)","(&(objectCategory=User)(samaccountname=$CurrentUser))")).FindOne().Properties
     if ( ! $MainUser ) {
         [array]$MainUser = (New-Object adsisearcher([adsi]"LDAP://$($ScriptVariables.OU_Admin)","(&(objectCategory=User)(samaccountname=$CurrentUser))")).FindOne().Properties
-        if ( $MainUser ) {
-            $MainUser
-        }
+        if ( $MainUser ) { $MainUser }
     }
     else { $MainUser }
 }
 function Get-ThemeOptions {
-    param (
-        [string]$CurrentUser,
-        [string]$SelectedThemeToEdit,
-        [switch]$List
-    )
-    
-    $AvailableThemes = (Get-ChildItem (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'style\theme*')).BaseName
-    if ( $CurrentUser ) {
-        $CurrentTheme = (Get-ChildItem (Join-Path -Path $ScriptVariables.PersonalPath -ChildPath ('\' + $CurrentUser + '-*.css_link'))).BaseName
-    }
+    param ( [string]$CurrentUser )    
+    if ( $CurrentUser ) { $CurrentTheme = (Get-ChildItem (Join-Path -Path $ScriptVariables.PersonalPath -ChildPath "$($CurrentUser)-*.css_link")).BaseName }
     $SelectThemes = @()
     foreach ( $Theme in $AvailableThemes ) {
-        if ( !$List ) {
-            if ( $CurrentTheme -match ($Theme -replace 'theme-','') ) {
-                $Selected = 'Selected'
-            }
-            else {
-                if ( !$CurrentTheme -and $Theme -eq $ScriptVariables.Theme ) {
-                    $Selected = 'selected'
-                }
-                else { $Selected = $null }
-            }
-            if ( $Theme -eq $ScriptVariables.Theme ) {
-                $DefaultTheme = " ($($ScriptVariables.Text.DefaultText))"
-            }
-            else { $DefaultTheme = $null }
-        }
+        if ( $CurrentTheme -match ($Theme -replace 'theme-','') ) { $Selected = 'Selected' }
         else {
-            if ( $SelectedThemeToEdit -eq $null ) {
-                if ( $Theme -eq $ScriptVariables.Theme ) {
-                    $Selected = 'selected'
-                    $DefaultTheme = " ($($ScriptVariables.Text.DefaultText))"
-                }
-                else {
-                    $Selected = $null
-                    $DefaultTheme = $null
-                }
-            }
-            else {
-                if ( $Theme -eq $ScriptVariables.Theme ) {
-                    $DefaultTheme = " ($($ScriptVariables.Text.DefaultText))"
-                }
-                else { $DefaultTheme = $null }
-                if ( $Theme -eq $SelectedThemeToEdit ) {
-                    $Selected = 'selected'
-                }
-                else { $Selected = $null }
-            }
+            if ( !$CurrentTheme -and $Theme -eq $ScriptVariables.Theme ) { $Selected = 'selected' }
+            else { $Selected = $null }
         }
+        if ( $Theme -eq $ScriptVariables.Theme ) { $DefaultTheme = " ($($ScriptVariables.Text.DefaultText))" }
+        else { $DefaultTheme = $null }
         $SelectThemes += '<option value="' + $Theme + '" ' + $Selected + '>' + ($Theme -replace '_',' ' -replace 'theme-','') + $DefaultTheme + '</option>'
     }
     $SelectThemes = $SelectThemes -join ''
     $SelectThemes
 }
-function ConvertFrom-CSS {
-    
-    [CmdletBinding(DefaultParameterSetName = 'Theme')]
-    param (
-        [Parameter(ParameterSetName = 'Theme')]
-        [string]$Theme,
-        [Parameter(ParameterSetName = 'CurrentUserTheme')]
-        [string]$CurrentUserTheme
-    )
-
-    if ( $Theme ) { $UsingTheme = $Theme }
-    if ( $CurrentUserTheme ) { $UsingTheme = $CurrentUserTheme }
-
-    $PageCSS = $((Get-Content (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath ('style\' + $UsingTheme + '.css'))) -Replace "(<style>|</style>)","").trim()
-    $pscustomobj = $null
-    foreach ( $obj in $PageCSS ) {
-        if ( $obj -match "{" -and $Parent -eq $null ) {
-            $Parent = [regex]::match($obj,".*[^{]").value.trim().tolower()
-            $pscustomobj += @{
-                [regex]::match($obj,".*[^{]").value.trim().tolower() = @{}
-            }
-        }
-        elseif ( $obj -match "}" -and $Parent -ne $null ) {
-            $Parent = $null
-        }
-        elseif ( $obj -match ":.*;" -and $Parent -ne $null ) {
-            try {
-                $pscustomobj.$Parent += @{
-                    [regex]::match($obj,".*(?=:)").value.trim() = [regex]::match($obj,"(?<=:).*[^;]").value.trim()
-                }
-            }
-            catch {
-                $pscustomobj.$Parent.Remove($([regex]::match($obj,".*(?=:)").value.trim()))
-                $pscustomobj.$Parent += @{
-                    [regex]::match($obj,".*(?=:)").value.trim() = [regex]::match($obj,"(?<=:).*[^;]").value.trim()
-                }
-            }
-        }
-    }
-    $pscustomobj
-}
-
 #region declare variables
     $global:ScriptVariables += @{ 
         LinksFilePath    = Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'bin\links.csv'
@@ -145,4 +61,7 @@ function ConvertFrom-CSS {
     $global:Logfile = $ScriptVariables.LogChangesPath
     [array]$Global:EditMembers = (New-Object adsisearcher([adsi]"LDAP://$($ScriptVariables.OU_Group)","(name=$($ScriptVariables.EditGroup))")).FindOne().Properties.member
     [array]$Global:AdminMembers = (New-Object adsisearcher([adsi]"LDAP://$($ScriptVariables.OU_Group)","(name=$($ScriptVariables.AdminGroup))")).FindOne().Properties.member
+
+    $global:Links = Import-CSV $ScriptVariables.LinksFilePath -Delimiter $ScriptVariables.CSVDelimiter
+    $global:AvailableThemes = (Get-ChildItem (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'style\theme*')).BaseName
 #endregion

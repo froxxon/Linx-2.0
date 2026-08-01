@@ -3,9 +3,10 @@ if ( !$ScriptVariables.ScriptPath ) { $ScriptVariables.ScriptPath = $PSScriptRoo
 if ( $psISE    ) { $ScriptVariables.ScriptPath = ([regex]::match($psISE.CurrentFile.FullPath,".*(?:\\)")).Value   }
 if ( $psEditor ) { $ScriptVariables.ScriptPath = Split-Path -Parent $psEditor.GetEditorContext().CurrentFile.Path }
 if ( !$ScriptVariables.ScriptPath ) {
-    if ( Test-path 'C:\RestPS\' ) { $ScriptVariables.ScriptPath = 'C:\RestPS\' }
+    if ( Test-path 'C:\RestPS\Linx\' ) { $ScriptVariables.ScriptPath = 'C:\RestPS\Linx\' }
+    else { $ScriptVariables.ScriptPath = '\\webdiv-p101w\c$\RestPS\Linx\' }
 }
-import-module (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'modules\Internal-CmdLets.psm1') -force
+import-module (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'modules\Internal-CmdLets.psd1') -force
 
 $RestPSparams = @{
             RestPSLocalRoot  = $ScriptVariables.ScriptPath

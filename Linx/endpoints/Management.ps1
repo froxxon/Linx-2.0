@@ -1,8 +1,7 @@
-param( $Body, $RequestArgs )
-
+﻿param( $Body, $RequestArgs )
 $CurrentUser = $null
 $CurrentUser = $($Request.Headers['X-Authenticated-User'] -replace ("$($ScriptVariables.Domain)\\",''))  
-if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_]{1,64}$' ) { return $ScriptVariables.Text.AccessDenied }
+if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_\$]{1,64}$' ) { return "$($ScriptVariables.Text.AccessDenied)" }
 
 $MainUser = Get-MainUser $CurrentUser
 if ( !$MainUser ) {
@@ -56,7 +55,7 @@ foreach ( $attrib in $RequestObj.GetEnumerator() ) {
         }
         Description { 
             if ( $cleanValue -match $ScriptVariables.Regex.RgxDescription ) { 
-                $LinkDescription = [System.Net.WebUtility]::HtmlEncode($cleanValue) 
+                $LinkDescription = [System.Net.WebUtility]::HtmlEncode($cleanValue) -replace $ScriptVariables.CSVDelimiter,''
             } 
         }
         Category { if ( $cleanValue -match $ScriptVariables.Regex.RgxCategory ) { $LinkCategory = $cleanValue } }
@@ -69,12 +68,12 @@ foreach ( $attrib in $RequestObj.GetEnumerator() ) {
         Contact  { if ( $cleanValue -match $ScriptVariables.Regex.RgxContact ) { $LinkContact = $cleanValue } }
         Notes    { 
             if ( $cleanValue -match $ScriptVariables.Regex.RgxNotes ) { 
-                $LinkNotes = [System.Net.WebUtility]::HtmlEncode($cleanValue) 
+                $LinkNotes = [System.Net.WebUtility]::HtmlEncode($cleanValue) -replace $ScriptVariables.CSVDelimiter,''
             } 
         }
         Tags     { if ( $cleanValue -match $ScriptVariables.Regex.RgxTags ) { $LinkTag = $cleanValue } }
         
-        ID       { if ($cleanValue -match '^\d+$') { $ID = [int]$cleanValue } }
+        ID       { if ($cleanValue -match '^\d+$') { $ID = $cleanValue } }
         
         Logo { 
             if ([Uri]::TryCreate($cleanValue, [UriKind]::Absolute, [ref]$outUri) -and ($outUri.Scheme -in @('http', 'https'))) {
@@ -102,11 +101,12 @@ if ( $Type -eq 'new' ) {
             $LatestNumber = "0000000"
         }
         else {
-            $LatestNumber = $((Get-Content -Tail 1 $PersonalPath).Split(';'))[0]
+            $LatestNumber = (Import-Csv -Path $PersonalPath -Delimiter $ScriptVariables.CSVDelimiter | Select id -Last 1).id
+            $LatestNumber = '{0:d7}' -f ([int]$LatestNumber + 1)
             if ( $LatestNumber -eq 'ID' ) { $LatestNumber = '0000000' }
         }
         $LatestNumber = '{0:d7}' -f ([int]$LatestNumber + 1)
-        $SaveString = "$LatestNumber;$LinkName;$LinkURL;$LinkDescription;$LinkCategory;$LinkRole;$LinkTag;$LinkContact;$LinkNotes;$LinkDisabled;"
+        $SaveString = @($LatestNumber,$LinkName,$LinkURL,$LinkDescription,$LinkCategory,$LinkRole,$LinkTag,$LinkContact,$LinkNotes,$LinkDisabled) -join $ScriptVariables.CSVDelimiter
         $SaveString | out-file $PersonalPath -Encoding $($ScriptVariables.Charset -replace '-','') -Append
         $Output += '<form id="AutoSubmit" action="/" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>"'
     }
@@ -117,51 +117,53 @@ if ( $Type -eq 'new' ) {
                 $LatestNumber = "00000000"
             }
             else {
-                $LatestNumber = $((Get-Content -Tail 1 $ScriptVariables.LinksFilePath).Split(';'))[0]
+                $LatestNumber = ($Links | Select -Last 1).id
                 if ( $LatestNumber -eq 'ID' ) { $LatestNumber = '00000000' }
             }
             $LatestNumber = '{0:d8}' -f ([int]$LatestNumber + 1)
-            $SaveString = "$LatestNumber;$LinkName;$LinkURL;$LinkDescription;$LinkCategory;$LinkRole;$LinkTag;$LinkContact;$LinkNotes;$LinkDisabled;"
+            $SaveString = @($LatestNumber,$LinkName,$LinkURL,$LinkDescription,$LinkCategory,$LinkRole,$LinkTag,$LinkContact,$LinkNotes,$LinkDisabled) -join $ScriptVariables.CSVDelimiter
             $SaveString | out-file $ScriptVariables.LinksFilePath -Encoding $($ScriptVariables.Charset -replace '-','') -Append
             Write-Log -Message "$CurrentUser created ID $LatestNumber : $LinkName"
             $Output += '<form id="AutoSubmit" action="/" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>"'
         }
     }
+    $global:Links = Import-CSV $ScriptVariables.LinksFilePath -Delimiter $ScriptVariables.CSVDelimiter
 }
 elseif ( $Type -eq 'update' ) {
     if ( $ID.length -eq 7 ) {
         if ( $LinkPersonal ) {
             $PersonalPath = "$($ScriptVariables.PersonalPath)\$CurrentUser.csv"
-            $Find = Select-String -Path $PersonalPath -Pattern $ID -Encoding $($ScriptVariables.Charset -replace '-','') | select-object -ExpandProperty Line
-            $Replace = "$ID;$LinkName;$LinkURL;$LinkDescription;$LinkCategory;;$LinkTag;;$LinkNotes;;"
+            $Find = Select-String -Path $PersonalPath -Pattern "^$($ID)$($ScriptVariables.CSVDelimiter)" -Encoding $($ScriptVariables.Charset -replace '-','') | select-object -ExpandProperty Line
+            $Replace = @($ID,$LinkName,$LinkURL,$LinkDescription,$LinkCategory,$null,$LinkTag,$null,$LinkNotes,$null) -join $ScriptVariables.CSVDelimiter
             (Get-Content $PersonalPath).replace($Find, $Replace) | Set-Content $PersonalPath  -Encoding $($ScriptVariables.Charset -replace '-','')
             $Output += '<form id="AutoSubmit" action="/Personal" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>"'
         }
     }
     elseif ( $ID.length -eq 8 ) {
         if ( $EditAccess -or $AdminAccess ) {
-            $Find = Select-String -Path $ScriptVariables.LinksFilePath -Pattern $ID -Encoding $($ScriptVariables.Charset -replace '-','') | select-object -ExpandProperty Line
-            $Replace = "$ID;$LinkName;$LinkURL;$LinkDescription;$LinkCategory;$LinkRole;$LinkTag;$LinkContact;$LinkNotes;$LinkDisabled;"
+            $Find = Select-String -Path $ScriptVariables.LinksFilePath -Pattern "^$($ID)$($ScriptVariables.CSVDelimiter)" -Encoding $($ScriptVariables.Charset -replace '-','') | select-object -ExpandProperty Line
+            $Replace = @($ID,$LinkName,$LinkURL,$LinkDescription,$LinkCategory,$LinkRole,$LinkTag,$LinkContact,$LinkNotes,$LinkDisabled) -join $ScriptVariables.CSVDelimiter
             (Get-Content "$($ScriptVariables.LinksFilePath)").replace($Find, $Replace) | Set-Content $ScriptVariables.LinksFilePath -Encoding $($ScriptVariables.Charset -replace '-','')
             Write-Log -Message "$CurrentUser modified ID $ID : $LinkName"
             $Output += '<form id="AutoSubmit" action="/Admin" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>"'
         }
     }
+    $global:Links = Import-CSV $ScriptVariables.LinksFilePath -Delimiter $ScriptVariables.CSVDelimiter
 }
 elseif ( $RequestArgs -match '^UpdateText$' ) {
-    if ( $AdminAccess ) {
+    if ( $AdminAccess ) {        
         $PSObject = New-Object -TypeName PSObject
         $RequestObj.GetEnumerator() | Sort Name | foreach { $PSObject | Add-Member -NotePropertyName $_.key -NotePropertyValue $_.value }
         $PSObject | ConvertTo-Json | Out-File ($ScriptVariables.LanguagePath + $ScriptVariables.Language + '.json') -Encoding ($ScriptVariables.Charset -replace '-','')
-        $ScriptVariables.Text = $ScriptVariables.Text = @{} ; (Get-Content ($ScriptVariables.LanguagePath + $ScriptVariables.Language + '.json') | ConvertFrom-Json).PSObject.Properties | foreach { $ScriptVariables.Text[$_.Name] = $_.Value } | Sort Name
+        $ScriptVariables.Text = $ScriptVariables.Text = @{} ; (Get-Content (Join-Path -Path $ScriptVariables.LanguagePath -ChildPath "$($ScriptVariables.Language).json") | ConvertFrom-Json).PSObject.Properties | foreach { $ScriptVariables.Text[$_.Name] = $_.Value } | Sort Name
         $Output += '<form id="AutoSubmit" action="/Admin?Text" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>'
     }
 }
 elseif ( $RequestArgs -match '^ResetText$' ) {
     if ( $AdminAccess ) {
         $Language = ([regex]::match(($ScriptVariables.LanguagePath + $ScriptVariables.Language + '.json'),"[a-z]{2}-[a-z]{2}")).Value
-        Copy-Item -Path "$(($ScriptVariables.LanguagePath + $ScriptVariables.Language + '.json') -replace "$Language","$($Language)_default")" -Destination $ScriptVariables.LanguagePath -Force
-        $ScriptVariables.Text = $ScriptVariables.Text = @{} ; (Get-Content ($ScriptVariables.LanguagePath + $ScriptVariables.Language + '.json') | ConvertFrom-Json).PSObject.Properties | foreach { $ScriptVariables.Text[$_.Name] = $_.Value } | Sort Name
+        Copy-Item -Path "$((Join-Path -Path $ScriptVariables.LanguagePath -ChildPath "$($ScriptVariables.Language).json") -replace "$Language","$($Language)_default")" -Destination $ScriptVariables.LanguagePath -Force
+        $ScriptVariables.Text = $ScriptVariables.Text = @{} ; (Get-Content (Join-Path -Path $ScriptVariables.LanguagePath -ChildPath "$($ScriptVariables.Language).json") | ConvertFrom-Json).PSObject.Properties | foreach { $ScriptVariables.Text[$_.Name] = $_.Value } | Sort Name
         $Output += '<form id="AutoSubmit" action="/Admin?Text" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>'
     }
 }
@@ -183,8 +185,8 @@ elseif ( $RequestArgs -match '^ResetRegex$' ) {
 }
 elseif ( $RequestArgs -match '^ResetLogo$' ) {
     if ( $AdminAccess ) {
-        $([convert]::ToBase64String((get-content ($ScriptVariables.ScriptPath + 'images\logo_default.png') -encoding byte))) | out-file ($ScriptVariables.ScriptPath + 'images\logo_base64.txt')
-        $ScriptVariables.Logo = Get-Content ($ScriptVariables.ScriptPath + 'images\logo_base64.txt')
+        $([convert]::ToBase64String((get-content (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'images\logo_default.png') -encoding byte))) | out-file (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'images\logo_base64.txt')
+        $ScriptVariables.Logo = Get-Content (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'images\logo_base64.txt')
         $Output += '<form id="AutoSubmit" action="/Admin?Regex" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>'    
     }
 }
@@ -193,68 +195,68 @@ elseif ( $RequestArgs -match '^UpdateSettings$' ) {
         if ( $Language ) {
             if ( $Language -ne $ScriptVariables.Language ) {
                 if ( $Language -match "^[a-z]{2}-[a-z]{2}$" ) {
-                    (Get-Content ($ScriptVariables.ScriptPath + 'base_settings.json')).replace('"' + $ScriptVariables.Language + '"','"' + $Language + '"') | Out-File ($ScriptVariables.ScriptPath + 'base_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
+                    (Get-Content (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'base_settings.json')).replace('"' + $ScriptVariables.Language + '"','"' + $Language + '"') | Out-File (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'base_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
                     $ScriptVariables.Language = $Language
-                    $ScriptVariables.Text = $ScriptVariables.Text = @{} ; (Get-Content ($ScriptVariables.LanguagePath + $Language + '.json') | ConvertFrom-Json).PSObject.Properties | foreach { $ScriptVariables.Text[$_.Name] = $_.Value } | Sort Name
+                    $ScriptVariables.Text = $ScriptVariables.Text = @{} ; (Get-Content (Join-Path -Path $ScriptVariables.LanguagePath -ChildPath "$($Language).json") | ConvertFrom-Json).PSObject.Properties | foreach { $ScriptVariables.Text[$_.Name] = $_.Value } | Sort Name
                 }
             }
         }
         if ( $LogoWidth -match "^[a-z0-9\%]+$" ) {
             $Property = 'LogoWidth'
             $PropertyValue = $LogoWidth
-            $CurrentRow = [regex]::match((Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
+            $CurrentRow = [regex]::match((Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
             $NewRow = $CurrentRow -replace [regex]::match($CurrentRow,"(?<=$Property\`":\s* \`").[^`"]*").Value, $PropertyValue
-            (Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File ($ScriptVariables.SettingsPath + 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
+            (Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
             $ScriptVariables.LogoWidth = $LogoWidth
         }
         if ( $LogRows -match "^[0-9]+$" ){
             $Property = 'LogRows'
             $PropertyValue = $LogRows
-            $CurrentRow = [regex]::match((Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
+            $CurrentRow = [regex]::match((Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
             $NewRow = $CurrentRow -replace [regex]::match($CurrentRow,"(?<=$Property\`":\s* \`").[^`"]*").Value, $PropertyValue
-            (Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File ($ScriptVariables.SettingsPath + 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
+            (Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
             $ScriptVariables.LogRows = $LogRows
         }
         if ( $Logo ) {
-            $Logo | Out-File ($ScriptVariables.ScriptPath + '\images\logo_base64.txt')
-            $ScriptVariables.Logo = Get-Content ($ScriptVariables.ScriptPath + '\images\logo_base64.txt')
+            $Logo | Out-File (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath '\images\logo_base64.txt')
+            $ScriptVariables.Logo = Get-Content (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath '\images\logo_base64.txt')
         }
         if ( $AllowPersonalLinks -ne $ScriptVariables.AllowPersonalLinks ) {
             if ( $AllowPersonalLinks -ne $true ) { $AllowPersonalLinks = $false }
             $Property = 'AllowPersonalLinks'
             $PropertyValue = $AllowPersonalLinks
-            $CurrentRow = [regex]::match((Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
+            $CurrentRow = [regex]::match((Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
             $NewRow = $CurrentRow -replace [regex]::match($CurrentRow,"(?<=$Property\`":\s* \`").[^`"]*").Value, $PropertyValue
-            (Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File ($ScriptVariables.SettingsPath + 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
+            (Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
             $ScriptVariables.AllowPersonalLinks = $AllowPersonalLinks
         }
         if ( $AllowPersonalTheme -ne $ScriptVariables.AllowPersonalTheme ) {
             if ( $AllowPersonalTheme -ne $true ) { $AllowPersonalTheme = $false }
             $Property = 'AllowPersonalTheme'
             $PropertyValue = $AllowPersonalTheme
-            $CurrentRow = [regex]::match((Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
+            $CurrentRow = [regex]::match((Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
             $NewRow = $CurrentRow -replace [regex]::match($CurrentRow,"(?<=$Property\`":\s* \`").[^`"]*").Value, $PropertyValue
-            (Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File ($ScriptVariables.SettingsPath + 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
+            (Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
             $ScriptVariables.AllowPersonalTheme = $AllowPersonalTheme
         }
         if ( $ShowFooter -ne $ScriptVariables.ShowFooter ) {
             if ( $ShowFooter -ne $true ) { $ShowFooter = $false }
             $Property = 'ShowFooter'
             $PropertyValue = $ShowFooter
-            $CurrentRow = [regex]::match((Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
+            $CurrentRow = [regex]::match((Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
             $NewRow = $CurrentRow -replace [regex]::match($CurrentRow,"(?<=$Property\`":\s* \`").[^`"]*").Value, $PropertyValue
-            (Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File ($ScriptVariables.SettingsPath + 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
+            (Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
             $ScriptVariables.ShowFooter = $ShowFooter
         }
         if ( $Theme ) {
             if ( $Theme -ne $ScriptVariables.Theme ) {
                 $Property = 'Theme'
                 $PropertyValue = $Theme
-                $CurrentRow = [regex]::match((Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
+                $CurrentRow = [regex]::match((Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')),"`"$Property`".[^,]*").Value -replace ' }',''
                 $NewRow = $CurrentRow -replace [regex]::match($CurrentRow,"(?<=$Property\`":\s* \`").[^`"]*").Value, $PropertyValue
-                (Get-Content ($ScriptVariables.SettingsPath + 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File ($ScriptVariables.SettingsPath + 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
+                (Get-Content (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json')).replace($CurrentRow,$NewRow) | Out-File (Join-Path -Path $ScriptVariables.SettingsPath -ChildPath 'custom_settings.json') -Encoding ($ScriptVariables.Charset -replace '-','')
                 $ScriptVariables.Theme = $Theme
-                $ScriptVariables.CSSpath = $ScriptVariables.ScriptPath + 'style\' + $ScriptVariables.Theme + '.css'
+                $ScriptVariables.CSSpath = Join-Path -Path $ScriptVariables.ScriptPath -ChildPath "style\$($ScriptVariables.Theme).css"
             }
         }
         $Output += '<form id="AutoSubmit" action="/Admin?Logo" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>'
@@ -262,13 +264,5 @@ elseif ( $RequestArgs -match '^UpdateSettings$' ) {
 }
 elseif ( $RequestArgs -match '^SetTheme$' ) {
 }
-$Output += @"
-  <script type="text/javascript" nonce="{{nonce}}">
-    function formAutoSubmit () {
-      var frm = document.getElementById("AutoSubmit");
-      frm.submit();
-    }
-    window.onload = formAutoSubmit;
-  </script>
-"@
+$Output += '<script src="/scripts.js" type="text/javascript" nonce="{{nonce}}"></script>'
 $Output

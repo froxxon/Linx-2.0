@@ -3,22 +3,19 @@ param ( $RequestArgs )
 #region Get user information
     $CurrentUser = $null
     $CurrentUser = $($Request.Headers['X-Authenticated-User'] -replace ("$($ScriptVariables.Domain)\\",''))  
-    if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_]{1,64}$' ) { return $ScriptVariables.Text.AccessDenied }
+    if ( $CurrentUser -notmatch '^[a-zA-Z0-9\.\-_\$]{1,64}$' ) { return "$($ScriptVariables.Text.AccessDenied)" }
     
-    if ( $ScriptVariables.AllowPersonalTheme -eq $true ) {
-        $PersonalCSSLink = (Get-ChildItem ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-*.css_link')).BaseName
-    }
-    else { $PersonalCSSLink = $null }
+    try { '' | Out-File (Join-Path -Path $ScriptVariables.PersonalPath -ChildPath "$($CurrentUser).accesstime" ) } catch {}
+
+    $PersonalCSSLink = $null
+    if ( $ScriptVariables.AllowPersonalTheme -eq $true ) { $PersonalCSSLink = (Get-ChildItem (Join-Path -Path $ScriptVariables.PersonalPath -ChildPath "$($CurrentUser)-*.css_link")).BaseName }
     if ( $PersonalCSSLink ) {
-        if ( Test-Path ($ScriptVariables.ScriptPath + 'style\' + ($PersonalCSSLink -replace "$CurrentUser-",'') + '.css' ) ) {
-            $CSS = Get-Content ($ScriptVariables.ScriptPath + 'style\' + ($PersonalCSSLink -replace "$CurrentUser-",'') + '.css' )
+        if ( Test-Path (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath "style\$($PersonalCSSLink -replace "$CurrentUser-",'').css" ) ) {
+            $CSS = Get-Content (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath "style\$($PersonalCSSLink -replace "$CurrentUser-",'').css" )            
         }
-        else {
-            Remove-Item ($ScriptVariables.PersonalPath + '\' + $CurrentUser + '-*.css_link') -Force
-            $CSS = Get-Content $ScriptVariables.CSSpath
-        }
+        else { Remove-Item (Join-Path -Path $ScriptVariables.PersonalPath -ChildPath "$($CurrentUser)-*.css_link") -Force }
     }
-    else { $CSS = Get-Content $ScriptVariables.CSSpath }
+    if ( $null -eq $CSS ) { $CSS = Get-Content $ScriptVariables.CSSpath }
     
     $HTML = [System.Text.StringBuilder]::new()
     [void]$HTML.AppendLine($(Get-HTMLHead $CSS))
@@ -33,6 +30,7 @@ param ( $RequestArgs )
         if ( $group -in $MainUser.memberof -or $group -eq $MainUser.distinguishedname ) {
             $Edit = '<th width="5%"></th>'
             $EditLinks += '<a href="' + $ScriptVariables.ServerURL + '/">' + $ScriptVariables.Text.StartPage + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin">' + $ScriptVariables.Text.AdmOverview + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Log">' + $ScriptVariables.Text.AdmLog + '</a>'
+            break
         }
     }
     foreach ( $group in $AdminMembers ) {
@@ -40,19 +38,16 @@ param ( $RequestArgs )
             $Edit = '<th width="5%"></th>'
             $Admin = "<th></th>"
             $AdminLinks += '<a href="' + $ScriptVariables.ServerURL + '/">' + $ScriptVariables.Text.StartPage + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin">' + $ScriptVariables.Text.AdmOverview + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Log">' + $ScriptVariables.Text.AdmLog + '</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Text">Text</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Regex">Regex</a><a href="' + $ScriptVariables.ServerURL + '/Admin?Settings">' + $ScriptVariables.Text.AdmSettings + '</a>'
+            break
         }
     }
-#endregion
-#region Get Links
-    $Links      = Import-CSV $ScriptVariables.LinksFilePath -Delimiter $ScriptVariables.CSVDelimiter
-    $Categories = @()
 #endregion
 $SelectThemes = Get-ThemeOptions $CurrentUser
 
 [void]$HTML.AppendLine('<header>')
 [void]$HTML.AppendLine('<nav align="left"><a href="' + $ScriptVariables.ServerURL + '/Admin?new">' + $ScriptVariables.Text.AdmNewLink + '</a>' + $EditLinks + $AdminLinks + '</nav>')
 if ( $ScriptVariables.AllowPersonalTheme -eq $true ) {
-    [void]$HTML.AppendLine('<div><select name="Theme" style="width: 200px;" class="SelTheme" onChange="SetTheme(this.value)">' + $SelectThemes + '</select></div>')
+    [void]$HTML.AppendLine('<div><select name="Theme" id="themeSelect" style="width: 200px;" class="SelTheme">' + $SelectThemes + '</select></div>')
 }
 [void]$HTML.AppendLine('</header>')
 [void]$HTML.AppendLine('<table id="main" align="center">')
@@ -61,28 +56,56 @@ if ( $ScriptVariables.AllowPersonalTheme -eq $true ) {
 if ( !$RequestArgs ) {
     if ( ! $Edit ) { exit }
     [void]$HTML.AppendLine( @"
-    <tr><td><input type="text" id="inputFilter" onkeyup="filterFunctionMultiTables(5)" placeholder="$($ScriptVariables.Text.FilterText)" autofocus></td></tr>
+    <tr><td><input type="text" id="inputFilter" placeholder="$($ScriptVariables.Text.FilterText)" autofocus></td></tr>
     <tr><td>
       <table align="center" data-name="mytable" id="filteredTable" class="hover innerTable">
-        <thead><tr><th align="left" width="30%" onclick="sortTableByAREF(0)">$($ScriptVariables.Text.LblName)</th><th width="30%" onclick="sortTable(1)">$($ScriptVariables.Text.LblDescription)</th><th width="15%" onclick="sortTable(2)">$($ScriptVariables.Text.LblCategory)</th><th width="15%" onclick="sortTable(3)">$($ScriptVariables.Text.LblRole)</th><th width="5%" onclick="sortTable(4)">$($ScriptVariables.Text.LblShowLink)</th>$Edit</tr></thead>
+        <thead><tr><th align="left" width="30%">$($ScriptVariables.Text.LblName)</th><th width="30%">$($ScriptVariables.Text.LblDescription)</th><th width="15%">$($ScriptVariables.Text.LblCategory)</th><th width="15%">$($ScriptVariables.Text.LblRole)</th><th width="5%">$($ScriptVariables.Text.LblShowLink)</th>$Edit</tr></thead>
           <tbody>
 "@ )
     foreach ( $Link in $Links | Sort-Object Name ) {
         if ( $Link.Disabled -match "^true$" ) {
             $Enabled = '<font class="admlinkdisabled">' + $ScriptVariables.Text.IsNo + '</font>'
         }
-        else { $Enabled = '<font class="admlinkenabled">' + $ScriptVariables.Text.IsYes + '</font>' }
+        else {
+            $Enabled = '<font class="admlinkenabled">' + $ScriptVariables.Text.IsYes + '</font>'
+        }
+        
         $EditColumn = '<td><a href="' + $ScriptVariables.ServerURL + '/Admin?' + $Link.ID + '">' + $ScriptVariables.Text.Edit + '</a></td>'
-        if ( $Link.Role -ne '' ) { $RoleTips = '<br><br><b>' + $ScriptVariables.Text.DisplayFor + ':</b><br>' + $($Link.Role -replace ',','<br>') }
-        else { $RoleTips = '<br><br><b>' + $ScriptVariables.Text.DisplayFor + ':</b><br>' + $ScriptVariables.Text.Everyone }
-        if ( $Link.Tags -ne '' ) { $TagTips = '<br><br><b>' + $ScriptVariables.Text.LblTags + ':</b><br>' + $($Link.Tags) }
-        else { $TagTips = '<br><br><b>' + $ScriptVariables.Text.LblTags + ':</b><br><font class="tooltipempty"><i>-</i></font>' }
-        if ( $Link.Contact -ne '' ) { $ContactTips = '<br><br><b>' + $ScriptVariables.Text.LblContact + ':</b><br>' + $($Link.Contact) }
-        else { $ContactTips = '<br><br><b>' + $ScriptVariables.Text.LblContact + ':</b><br><font class="tooltipempty"><i>-</i></font>' }
-        if ( $Link.Notes -ne '' ) { $NotesTips = '<br><br><b>' + $ScriptVariables.Text.LblNotes + ':</b><br>' + $($Link.Notes) }
-        else { $NotesTips = '<br><br><b>' + $ScriptVariables.Text.LblNotes + ':</b><br><font class="tooltipempty"><i>-</i></font>' }
+        
+        $RoleTips = $null
+        if ( $Link.Role -ne '' ) {
+            $RoleTips = '<br><br><b>' + $ScriptVariables.Text.DisplayFor + ':</b><br>' + $($Link.Role -replace ',','<br>')
+        }
+        else {
+            $RoleTips = '<br><br><b>' + $ScriptVariables.Text.DisplayFor + ':</b><br>' + $ScriptVariables.Text.Everyone
+        }
+        
+        $TagTips = $null
+        if ( $Link.Tags -ne '' ) {
+            $TagTips = '<br><br><b>' + $ScriptVariables.Text.LblTags + ':</b><br>' + $($Link.Tags)
+        }
+        else {
+            $TagTips = '<br><br><b>' + $ScriptVariables.Text.LblTags + ':</b><br><font class="tooltipempty"><i>-</i></font>'
+        }
+        
+        $ContactTips = $null
+        if ( $Link.Contact -ne '' ) {
+            $ContactTips = '<br><br><b>' + $ScriptVariables.Text.LblContact + ':</b><br>' + $($Link.Contact)
+        }
+        else {
+            $ContactTips = '<br><br><b>' + $ScriptVariables.Text.LblContact + ':</b><br><font class="tooltipempty"><i>-</i></font>'
+        }
+        
+        $NotesTips = $null
+        if ( $Link.Notes -ne '' ) {
+            $NotesTips = '<br><br><b>' + $ScriptVariables.Text.LblNotes + ':</b><br>' + $($Link.Notes)
+        }
+        else {
+            $NotesTips = '<br><br><b>' + $ScriptVariables.Text.LblNotes + ':</b><br><font class="tooltipempty"><i>-</i></font>'
+        }
+        
         $TooltipText = "$RoleTips$TagTips$ContactTips$NotesTips"
-        [void]$HTML.AppendLine('<tr><td width="10%" align="left"><div class="tooltip"><a href="' + $Link.URL + '" target="_blank"/>' + $Link.Name + '</a><span class="tooltiptext">' + $TooltipText + '</span></div></td><td>' + $Link.Description + '</td><td>' + $Link.Category + '</td><td>' + $Link.Role + '</td><td>' + $($Enabled) + '</td><td class="hiddenColumn">' + $Link.Name + $Link.Tags + '</td>' + $EditColumn + '</tr>')
+        [void]$HTML.AppendLine('<tr><td width="10%" align="left"><div class="tooltip"><a href="' + $Link.URL + '" target="_blank"/>' + $Link.Name + '</a><span class="tooltiptext">' + $TooltipText + '</span></div></td><td>' + $Link.Description + '</td><td class="hiddenColumn">' + $Link.Name + $Link.Tags + '</td><td>' + $Link.Category + '</td><td>' + $Link.Role + '</td><td>' + $($Enabled) + '</td><td class="hiddenColumn">' + $Link.Name + $Link.Tags + '</td>' + $EditColumn + '</tr>')
     }
     [void]$HTML.AppendLine('</tbody>')
     [void]$HTML.AppendLine('</table>')
@@ -91,18 +114,20 @@ if ( !$RequestArgs ) {
 elseif ( $RequestArgs -match '^Log$' ) {
     if ( ! $Edit ) { exit }
     [void]$HTML.AppendLine( @"
-    <tr><td><input type="text" id="inputFilter" class="inputFilter" onkeyup="filterFunctionLogTable()" placeholder="$($ScriptVariables.Text.FilterText)" autofocus></td></tr>
+    <tr><td><input type="text" id="inputFilterLog" class="inputFilterLog" placeholder="$($ScriptVariables.Text.FilterText)" autofocus></td></tr>
     <tr><td>
       <table align="center" data-name="mytable" id="filteredTable" class="hover innerTable">
         <tr><th>$($ScriptVariables.LogRows) $($ScriptVariables.Text.LogText):</th></tr>
 "@ )
+
     [array]$Logs = Get-Content "$($ScriptVariables.LogChangesPath)" -tail $ScriptVariables.LogRows -Encoding $($ScriptVariables.Charset -replace '-','') | Select -Skip 1 | sort -Descending
     foreach ( $Log in $Logs ) {
-        if ( $Log -match " created " ) { $Log = $Log -replace (' created ','<font class="logobjCreated"> <b>created</b> </font>') }
+        if     ( $Log -match " created "  ) { $Log = $Log -replace (' created ','<font class="logobjCreated"> <b>created</b> </font>') }
         elseif ( $Log -match " modified " ) { $Log = $Log -replace (' modified ','<font class="logobjModified"> <b>modified</b> </font>') }
-        elseif ( $Log -match " removed " ) { $Log = $Log -replace (' removed ','<font class="logobjRemoved"> <b>removed</b> </font>') }
+        elseif ( $Log -match " removed "  ) { $Log = $Log -replace (' removed ','<font class="logobjRemoved"> <b>removed</b> </font>') }
         [void]$HTML.AppendLine('<tr><td align="left">' + $Log + '</td></tr>')
     }
+
     [void]$HTML.AppendLine('</table>')
     [void]$HTML.AppendLine('</td></tr>')
     [void]$HTML.AppendLine('<tr><td>')
@@ -121,11 +146,11 @@ elseif ( $RequestArgs -match '^[0-9]{8}$' ) {
     if ( ! $Edit ) { exit }
     $Link = Select-String -Path $ScriptVariables.LinksFilePath -Pattern $RequestArgs -Encoding $($ScriptVariables.Charset -replace '-','') | Select-Object -ExpandProperty Line | convertfrom-csv -Delimiter $ScriptVariables.CSVDelimiter -Header $((Get-Content $ScriptVariables.LinksFilePath -First 1).Split($ScriptVariables.CSVDelimiter))
     $Categories = @{}
-    $($Links.Category | Sort-Object -Unique).ForEach({
-        $currCat = $_
-        $Categories.Add($currCat,@{ 
-            ItemCount = $( $Links.Category | Where { $_ -match $currCat }).Count
-            Short = $($currCat -Replace "$($ScriptVariables.Regex.RgxShortCategory)","")
+    ($Links | Group-Object Category).ForEach({
+        $currCat = $_.Name
+        $Categories.Add($currCat, @{
+            ItemCount = $_.Count
+            Short     = $($currCat -replace "$($ScriptVariables.Regex.RgxShortCategory)","")
         })
     })
     $SelectCats = '<option value=""></option>'
@@ -154,17 +179,17 @@ elseif ( $RequestArgs -match '^[0-9]{8}$' ) {
     [void]$HTML.AppendLine('</table>')
     [void]$HTML.AppendLine('</td></tr>')
     [void]$HTML.AppendLine('<table class="innertable">')
-    [void]$HTML.AppendLine('<tr><td><a title="' + $ScriptVariables.Text.RemoveLinkWarning + '" href="/Admin?remove' + $RequestArgs + '" align="center" class="removelink">' + $ScriptVariables.Text.RemoveLink + '</a></td><td align="right"><button class="btn" type="button" onclick="window.location.href=`/`">' + $ScriptVariables.Text.CancelBtn + '</button><input class="btn" type="Submit" form="frmSaveLink" value="' + $ScriptVariables.Text.UpdateBtn + '"></td></tr>')
+    [void]$HTML.AppendLine('<tr><td><a title="' + $ScriptVariables.Text.RemoveLinkWarning + '" href="/Admin?remove' + $RequestArgs + '" align="center" class="removelink">' + $ScriptVariables.Text.RemoveLink + '</a></td><td align="right"><button id="btnRemoveLink" class="btn" type="button">' + $ScriptVariables.Text.CancelBtn + '</button><input class="btn" type="Submit" form="frmSaveLink" value="' + $ScriptVariables.Text.UpdateBtn + '"></td></tr>')
     [void]$HTML.AppendLine('</table>')
     [void]$HTML.AppendLine('</td></tr>')
 }
 elseif ( $RequestArgs -match '^new$' ) {
     $Categories = @{}
-    $($Links.Category | Sort-Object -Unique).ForEach({
-        $currCat = $_
-        $Categories.Add($currCat,@{ 
-            ItemCount = $( $Links.Category | Where { $_ -match $currCat }).Count
-            Short = $($currCat -Replace "$($ScriptVariables.Regex.RgxShortCategory)","")
+    ($Links | Group-Object Category).ForEach({
+        $currCat = $_.Name
+        $Categories.Add($currCat, @{
+            ItemCount = $_.Count
+            Short     = $($currCat -replace "$($ScriptVariables.Regex.RgxShortCategory)","")
         })
     })
     $SelectCats = '<option value=""></option>'
@@ -184,42 +209,35 @@ elseif ( $RequestArgs -match '^new$' ) {
     [void]$HTML.AppendLine('<tr><td align="left" style="width: 25%;">' + $ScriptVariables.Text.LblNotes + '</td><td><input type="text" class="inputFilter" name="Notes" pattern="' + $ScriptVariables.Regex.RgxNotes + '" placeholder="' + $ScriptVariables.Text.PhdNotes + '"/></td></tr>')
     [void]$HTML.AppendLine('<tr><td align="left" style="width: 25%">' + $ScriptVariables.Text.LblShowLink + '</td><td align="right"><label class="switch"><input type=checkbox id="chkEnabled" name="Enabled" value="checked" checked><span class="slider"></span></label></td></tr>')
     if ( $ScriptVariables.AllowPersonalLinks -eq $true ) {
-        [void]$HTML.AppendLine('<tr><td align="left" style="width: 25%">' + $ScriptVariables.Text.LblPersonal + '</td><td align="right"><label class="switch" title="' + $ScriptVariables.Text.PersonalText + '" ><input type=checkbox id="chkPersonal" onclick="enableDisableFields()"  title="' + $ScriptVariables.Text.PersonalText + '" name="Personal" value="checked"><span class="slider"></span></label></td></tr>')
+        [void]$HTML.AppendLine('<tr><td align="left" style="width: 25%">' + $ScriptVariables.Text.LblPersonal + '</td><td align="right"><label class="switch" title="' + $ScriptVariables.Text.PersonalText + '" ><input type=checkbox id="chkPersonal" title="' + $ScriptVariables.Text.PersonalText + '" name="Personal" value="checked"><span class="slider"></span></label></td></tr>')
     }
     [void]$HTML.AppendLine('<input hidden name="Type" value="new" type="text"/>')
     [void]$HTML.AppendLine('</form>')
     [void]$HTML.AppendLine('</table>')
     [void]$HTML.AppendLine('</td></tr>')
-    [void]$HTML.AppendLine('<tr><td align="right"><button class="btn" type="button" onclick="window.location.href=`/`">' + $ScriptVariables.Text.CancelBtn + '</button><pre>  </pre><input class="btn" type="Submit" form="frmSaveLink" value="' + $ScriptVariables.Text.SaveBtn + '"></td></tr>'   )
+    [void]$HTML.AppendLine('<tr><td align="right"><button class="btn" id="btnCancel" type="button">' + $ScriptVariables.Text.CancelBtn + '</button><pre>  </pre><input class="btn" type="Submit" form="frmSaveLink" value="' + $ScriptVariables.Text.SaveBtn + '"></td></tr>'   )
 }
 elseif ( $RequestArgs -match '^remove[0-9]{8}$' ) {
     if ( ! $Edit ) { exit }
     $CurrentContent = $(Get-Content -Path $ScriptVariables.LinksFilePath | Select-String -Pattern "^$($RequestArgs -replace 'remove','')\$($ScriptVariables.CSVDelimiter)" -Encoding $($ScriptVariables.Charset -replace '-','')).Line
-    $CurrentContent | Out-File -FilePath $ScriptVariables.RemovedLinksPath -Append
-    $LinkName = $($CurrentContent.Split($ScriptVariables.CSVDelimiter).Trim())[1]
-    Set-Content -Path $ScriptVariables.LinksFilePath -Encoding $($ScriptVariables.Charset -replace '-','') -Value (Get-Content -Path $ScriptVariables.LinksFilePath -Encoding $($ScriptVariables.Charset -replace '-','') | Select-String -Pattern "$($RequestArgs -replace 'remove','')" -Encoding $($ScriptVariables.Charset -replace '-','') -NotMatch)
-    Write-Log -Message "$CurrentUser removed ID $($RequestArgs -replace 'remove','') : $LinkName"
-    $CurrentContent = $null
-    [void]$HTML.AppendLine( @"
-  <form id="AutoSubmit" action="/Admin" method="get" enctype="multipart/form-data" accept-charset="$($ScriptVariables.Charset)"></form>"
-  <script type="text/javascript" nonce="{{nonce}}">
-    function formAutoSubmit () {
-      var frm = document.getElementById("AutoSubmit");
-      frm.submit();
+    if ( $CurrentContent ) {
+        $CurrentContent | Out-File -FilePath $ScriptVariables.RemovedLinksPath -Append
+        $LinkName = $($CurrentContent.Split($ScriptVariables.CSVDelimiter).Trim())[1]
+        Set-Content -Path $ScriptVariables.LinksFilePath -Encoding $($ScriptVariables.Charset -replace '-','') -Value (Get-Content -Path $ScriptVariables.LinksFilePath -Encoding $($ScriptVariables.Charset -replace '-','') | Select-String -Pattern "^$($RequestArgs -replace 'remove','')\$($ScriptVariables.CSVDelimiter)" -Encoding $($ScriptVariables.Charset -replace '-','') -NotMatch)
+        Write-Log -Message "$CurrentUser removed ID $($RequestArgs -replace 'remove','') : $LinkName"
+        $global:Links = Import-CSV $ScriptVariables.LinksFilePath -Delimiter $ScriptVariables.CSVDelimiter
     }
-    window.onload = formAutoSubmit;
-  </script>
-"@ )
+    [void]$HTML.AppendLine( '<form id="AutoSubmit" action="/Admin" method="get" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"></form>' )
 }
 elseif ( $RequestArgs -match '^Text$' ) {
     if ( ! $Admin ) { exit }
-    [void]$HTML.AppendLine('<tr><td><input type="text" id="inputFilter" onkeyup="filterFunctionMultiTables(0)" placeholder="' + $ScriptVariables.Text.FilterText + '" autofocus></td></tr>')
+    [void]$HTML.AppendLine('<tr><td><input type="text" id="inputFilter" placeholder="' + $ScriptVariables.Text.FilterText + '" autofocus></td></tr>')
     [void]$HTML.AppendLine('<tr><td align="left"><b>' + $ScriptVariables.Text.AwarenessText + '<br><br></b></td></tr>')
     [void]$HTML.AppendLine('<tr><td>')
     [void]$HTML.AppendLine('<table with="100%" align="center" data-name="mytable" id="filteredTable" class="hover innerTable">')
     [void]$HTML.AppendLine('<form id="frmUpdateText" action="/ManageLink?UpdateText" method="POST" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '">')
     foreach ( $obj in $ScriptVariables.Text.Keys | Sort ) {
-        [void]$HTML.AppendLine('<tr><td width="50%" align="left">' + $obj.trim() + '</td><td width="50%" align="right"><input type="text" name="' + $obj.trim() + '" value="' + $ScriptVariables.Text.$obj.trim() + '"/></td></tr>')
+        [void]$HTML.AppendLine('<tr><td width="50%" align="left">' + $obj.trim() + '</td><td width="50%" align="right"><input type="text" name="' + $obj.trim() + '" value="' + $ScriptVariables.Text.$obj.trim() + '"/></td><td class="hiddenColumn">' + $ScriptVariables.Text.$obj.trim() + '</td></tr>')
     }
     [void]$HTML.AppendLine('</form>')
     [void]$HTML.AppendLine('<form id="frmResetText" action="/ManageLink?ResetText" method="POST" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"/>')
@@ -249,7 +267,7 @@ elseif ( $RequestArgs -match '^Regex$' ) {
 elseif ( $RequestArgs -match '^Settings$' ) {
     if ( ! $Admin ) { exit }
     [void]$HTML.AppendLine('<form id="frmUpdateSettings" action="/ManageLink?UpdateSettings" method="POST" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '">')
-    $BaseSettings = Get-Content ($($ScriptVariables.ScriptPath) + 'base_settings.json') | ConvertFrom-Json
+    $BaseSettings = Get-Content (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'base_settings.json') | ConvertFrom-Json
     [void]$HTML.AppendLine('<tr><td id="cssheader"><b>' + $ScriptVariables.Text.SettingsServer + '</b></td></tr>')
     [void]$HTML.AppendLine('<tr><td>')
     [void]$HTML.AppendLine('<table align="center" class="hover innerTable">')
@@ -282,7 +300,7 @@ elseif ( $RequestArgs -match '^Settings$' ) {
             [void]$HTML.AppendLine('<tr><td style="width: 50%;" align="left"><label>' + $Setting.Name + '</label></td><td style="width: 50%;" align="right"><input type="text" name="' + $Setting.Name + '" value="' + $Setting.Value + '"/></td></tr>')
         }
         elseif ( $Setting.Name -eq 'Theme' ) {
-            $AvailableThemes = (Get-ChildItem ($ScriptVariables.ScriptPath + 'style\theme*')).BaseName
+            $AvailableThemes = (Get-ChildItem (Join-Path -Path $ScriptVariables.ScriptPath -ChildPath 'style\theme*')).BaseName
             [void]$HTML.AppendLine('<tr><td style="width: 50%;" align="left">' + $ScriptVariables.Text.SelectTheme + ' (<i>' + $ScriptVariables.Text.DefaultText +  '</i>)</td>')
             $SelectThemes = @()
             foreach ( $Theme in $AvailableThemes | Sort -Unique ) {
@@ -310,13 +328,6 @@ elseif ( $RequestArgs -match '^Settings$' ) {
             [void]$HTML.AppendLine('<tr><td style="width: 50%;" align="left">' + $Setting.Name + '</td><td align="right"><label class="switch"><input type=checkbox id="chkAllowPersonalTheme" name="AllowPersonalTheme" value="True" ' + $Enabled + '><span class="slider"></span></label></td></tr>')
         }
         elseif ( $Setting.Name -eq 'ShowFooter' ) {
-        #    if ( $ScriptVariables.ShowFooter -eq $True ) {
-        #        $CurrentStatus = '<option value="True" selected>' + $ScriptVariables.Text.IsYes + '</option><option value="False">' + $ScriptVariables.Text.IsNo + '</option>'
-        #    }
-        #    else {
-        #        $CurrentStatus = '<option value="True">' + $ScriptVariables.Text.IsYes + '</option><option value="False" selected>' + $ScriptVariables.Text.IsNo + '</option>'
-        #    }
-        #    $HTML += '<tr><td style="width: 50%;" align="left">' + $Setting.Name + '</td><td style="width: 50%;" align="right"><select class="selLang" name="ShowFooter"/>' + $CurrentStatus + '</select></td></tr>'
             if ( $ScriptVariables.ShowFooter -eq $true ) {
                 $Enabled = 'checked'
             }
@@ -333,32 +344,12 @@ elseif ( $RequestArgs -match '^Settings$' ) {
     [void]$HTML.AppendLine('</td></tr>')
     [void]$HTML.AppendLine('<tr><td>')
     [void]$HTML.AppendLine('<table with="100%" align="center" data-name="mytable" id="filteredTable" class="hover innerTable">')
-    [void]$HTML.AppendLine('<tr><td align="left"><label style="vertical-align: top;">' + $ScriptVariables.Text.LblChooseLogo + '</label></td><td align="right"><input type="button" style="align: right;" class="btn" value="' + $ScriptVariables.Text.UploadLogoBtn + '" onclick="document.getElementById(''filLogo'').click();" /></td></tr>')
+    [void]$HTML.AppendLine('<tr><td align="left"><label style="vertical-align: top;">' + $ScriptVariables.Text.LblChooseLogo + '</label></td><td align="right"><input type="button" id="btnChooseLogo" style="align: right;" class="btn" value="' + $ScriptVariables.Text.UploadLogoBtn + '"/></td></tr>')
     [void]$HTML.AppendLine('</table>')
     [void]$HTML.AppendLine('</td></tr>')
     [void]$HTML.AppendLine('<tr><td align="right"><input type="text" id="base64area" name="Logo" placeholder="' + $ScriptVariables.Text.PhdUploadLogo + '" hidden/><img id="tempLogo" src="data:image/png;base64, ' + $ScriptVariables.Logo + '" height="75em" /></td></tr>')
     [void]$HTML.AppendLine('<input type="file" id="filLogo" accept=".jpg,.gif,.png,.svg" hidden/>')
     [void]$HTML.AppendLine('</form>')
-    [void]$HTML.AppendLine( @"
-<script type="text/javascript" nonce="{{nonce}}">
-  var handleFileSelect = function(evt) {
-    var files = evt.target.files;
-    var file = files[0];
-    if (files && file) {
-      var reader = new FileReader();
-      reader.onload = function(readerEvt) {
-        var binaryString = readerEvt.target.result;
-        document.getElementById("base64area").value = btoa(binaryString);
-        document.getElementById("tempLogo").src = "data:image/png;base64," + btoa(binaryString);
-      };
-      reader.readAsBinaryString(file);
-    }
-  };
-  if (window.File && window.FileReader && window.FileList && window.Blob) {
-    document.getElementById('filLogo').addEventListener('change', handleFileSelect, false);
-  } else { alert('The File APIs are not fully supported in this browser.'); }
-</script>
-"@ )
     [void]$HTML.AppendLine('<form id="frmResetLogo" action="/ManageLink?ResetLogo" method="POST" enctype="multipart/form-data" accept-charset="' + $ScriptVariables.Charset + '"/>')
     [void]$HTML.AppendLine('<tr><td>')
     [void]$HTML.AppendLine('<table class="innerTable">')
@@ -371,140 +362,8 @@ else { exit }
     </td></tr>
   </table>
   $( if ( $ScriptVariables.ShowFooter -eq $true ) { '<img width="50em" style="vertical-align: middle;" src="data:image/png;base64, ' + $(Get-Content ($ScriptVariables.ScriptPath + 'images\linx_base64.txt')) + '"/><pre style="vertical-align: middle;"> version ' + $($ScriptVariables.Version) + '</pre>' })
-  <script nonce="{{nonce}}">
-    // Send with RequestArg when changing private Theme
-    function SetTheme(theme){location.href = "/?SelectTheme&" + theme + "&Admin";}
-
-    // Send with RequestArg what Theme to edit
-    function ChooseThemeToEdit(theme){location.href = "/Admin?CSS&" + theme;}
-
-    function filterFunctionMultiTables(n) {
-      var input, filter, table, tr, td, i,alltables;
-      alltables = document.querySelectorAll("table[data-name=mytable]");
-      input = document.getElementById("inputFilter");
-      filter = input.value.toUpperCase();
-      alltables.forEach(function(table){
-        tr = table.getElementsByTagName("tr");
-        for (i = 0; i < tr.length; i++) {
-          td = tr[i].getElementsByTagName("td")[n];
-          if (td) {
-            if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
-              tr[i].style.display = "";
-            } else {
-              tr[i].style.display = "none";
-            }
-          }       
-        }
-      });
-    }
-
-    // filter log page
-    function filterFunctionLogTable() {
-      var input, filter, table, tr, td, i,alltables;
-      alltables = document.querySelectorAll("table[data-name=mytable]");
-      input = document.getElementById("inputFilter");
-      filter = input.value.toUpperCase();
-      alltables.forEach(function(table){
-        tr = table.getElementsByTagName("tr");
-        for (i = 0; i < tr.length; i++) {
-          td = tr[i].getElementsByTagName("td")[0];
-          if (td) {
-            if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
-              tr[i].style.display = "";
-            } else {
-              tr[i].style.display = "none";
-            }
-          }       
-        }
-      });
-    }
-
-    function sortTable(n) {
-      var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-      table = document.getElementById("filteredTable");
-      switching = true;
-      dir = "asc";
-      while (switching) {
-        switching = false;
-        rows = table.rows;
-        for (i = 1; i < (rows.length - 1); i++) {
-          shouldSwitch = false;
-          x = rows[i].getElementsByTagName("TD")[n];
-          y = rows[i + 1].getElementsByTagName("TD")[n];
-          if (dir == "asc") {
-            if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
-              shouldSwitch = true;
-              break;
-            }
-          } else if (dir == "desc") {
-            if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
-              shouldSwitch = true;
-              break;
-            }
-          }
-        }
-        if (shouldSwitch) {
-          rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-          switching = true;
-          switchcount ++;
-        } else {
-          if (switchcount == 0 && dir == "asc") {
-            dir = "desc";
-            switching = true;
-          }
-        }
-      }
-    }
-
-    function sortTableByAREF(n) {
-      var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-      table = document.getElementById("filteredTable");
-      switching = true;
-      dir = "asc";
-      while (switching) {
-        switching = false;
-        rows = table.rows;
-        for (i = 1; i < (rows.length - 1); i++) {
-          shouldSwitch = false;
-          x = rows[i].getElementsByTagName("A")[n];
-          y = rows[i + 1].getElementsByTagName("A")[n];
-          if (dir == "asc") {
-            if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
-              shouldSwitch = true;
-              break;
-            }
-          } else if (dir == "desc") {
-            if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
-              shouldSwitch = true;
-              break;
-            }
-          }
-        }
-        if (shouldSwitch) {
-          rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-          switching = true;
-          switchcount ++;
-        } else {
-          if (switchcount == 0 && dir == "asc") {
-            dir = "desc";
-            switching = true;
-          }
-        }
-      }
-    }
-    //sortTableByAREF(0);
-
-    function enableDisableFields() {    
-        if (document.getElementById('chkPersonal').checked) {
-            document.getElementsByName('Role')[0].disabled = true;
-            document.getElementsByName('Contact')[0].disabled = true;
-        }
-        else {
-            document.getElementsByName('Role')[0].disabled = false;
-            document.getElementsByName('Contact')[0].disabled = false;
-        }
-    }
-  </script>
+  <script src="/admin.js" type="text/javascript" nonce="{{nonce}}"></script>
+  <script src="/scripts.js" type="text/javascript" nonce="{{nonce}}"></script>
 </body>
 </html>
 "@ )

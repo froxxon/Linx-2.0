@@ -23,5 +23,30 @@
     "RequestType": "GET",
     "RequestURL": "/favicon.ico",
     "RequestCommand": "Get-FavIcon.ps1"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/admin.js",
+    "RequestCommand": "/js/admin.js"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/main.js",
+    "RequestCommand": "/js/main.js"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/management.js",
+    "RequestCommand": "/js/management.js"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/personal.js",
+    "RequestCommand": "/js/personal.js"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/scripts.js",
+    "RequestCommand": "/js/scripts.js"
   }
 ]

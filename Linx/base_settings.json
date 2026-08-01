@@ -8,5 +8,6 @@
     "OU_Admin":  "OU=T1-Accounts,OU=Tier 1,OU=Admin,DC=domain,DC=com",
     "OU_Group":  "OU=T0-Tasks,OU=Tier 0,OU=Admin,DC=domain,DC=com",
     "OU_User":  "OU=StandardUsers,DC=domain,DC=com",
-    "Language":  "sv-se"
+    "Language":  "sv-se",
+    "RequestSignatureSecret": "SECRETKEY"
 }
