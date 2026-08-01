@@ -48,5 +48,10 @@
     "RequestType": "GET",
     "RequestURL": "/scripts.js",
     "RequestCommand": "/js/scripts.js"
+  },
+  {
+    "RequestType": "GET",
+    "RequestURL": "/refreshAll",
+    "RequestCommand": "Get-Test.ps1 -Type RefreshAll"
   }
 ]
