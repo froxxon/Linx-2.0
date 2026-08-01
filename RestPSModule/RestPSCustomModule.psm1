@@ -143,7 +143,8 @@ function Invoke-RequestRouter {
         if ($RequestCommand -match "\.ps1$") {
             # Execute Endpoint Script with parameters from RequestCommand + standard params
             if ($ScriptParams.Count -gt 0) {
-                $CommandReturn = . $RequestCommand $ScriptParams -RequestArgs $RequestArgs -Body $script:Body
+                # Use call operator with array expansion to properly pass parameters
+                $CommandReturn = . $RequestCommand @ScriptParams -RequestArgs $RequestArgs -Body $script:Body
             }
             else {
                 $CommandReturn = . $RequestCommand -RequestArgs $RequestArgs -Body $script:Body
