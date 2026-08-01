@@ -128,9 +128,10 @@ function Invoke-RequestRouter {
             # This is a PowerShell script - may have parameters
             $parts = $RouteCommand -split '\s+', 2
             $ScriptPath = $parts[0]
+            $paramString = $null
             if ($parts.Count -gt 1) {
-                # Parse additional parameters from RequestCommand
-                $ScriptParams = $parts[1] -split '\s+'
+                # Keep the parameter string to pass as-is
+                $paramString = $parts[1]
             }
         }
         else {
@@ -142,9 +143,11 @@ function Invoke-RequestRouter {
         set-location $PSScriptRoot
         if ($RequestCommand -match "\.ps1$") {
             # Execute Endpoint Script with parameters from RequestCommand + standard params
-            if ($ScriptParams.Count -gt 0) {
-                # Use call operator with array expansion to properly pass parameters
-                $CommandReturn = . $RequestCommand @ScriptParams -RequestArgs $RequestArgs -Body $script:Body
+            if ($paramString) {
+                # Build script block dynamically to handle parameters correctly
+                # This allows routes.json to specify parameters like: "Script.ps1 -Type RefreshAll"
+                $scriptBlock = [scriptblock]::Create("& '$RequestCommand' $paramString -RequestArgs `$args[0] -Body `$args[1]")
+                $CommandReturn = & $scriptBlock $RequestArgs $script:Body
             }
             else {
                 $CommandReturn = . $RequestCommand -RequestArgs $RequestArgs -Body $script:Body
