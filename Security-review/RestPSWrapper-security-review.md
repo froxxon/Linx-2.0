@@ -38,15 +38,6 @@ Protected header list enforced - backend cannot override wrapper security header
 
 ---
 
-## ⚠️ PARTIALLY MITIGATED - Shutdown Endpoint
-
-**Original Severity:** 🔴 HIGH  
-**Current Status:** ⚠️ **MITIGATED** (not fixed in code)
-
-Network isolation + authentication required. Recommend removing endpoint or adding role-based authorization.
-
----
-
 ## ⚠️ NOT FIXED - Session ID Validation
 
 **Original Severity:** 🟡 MEDIUM  
@@ -74,7 +65,6 @@ No format validation, length limits, or user binding. Session fixation attacks p
 |---|---|
 | Rate limiter IP spoofing | ✅ FIXED |
 | Backend headers unfiltered | ✅ FIXED |
-| Shutdown endpoint DoS | ⚠️ MITIGATED |
 | Session fixation | ⚠️ NOT FIXED |
 | Weak CSP | ✅ FIXED |
 | Size limit bypass | ✅ FIXED |
@@ -84,6 +74,6 @@ No format validation, length limits, or user binding. Session fixation attacks p
 | Hardcoded CSRF expiry | ✅ FIXED |
 | Body re-typed as JSON | ✅ FIXED |
 
-**Security Rating:** ✅ STRONG (9/11 resolved, 2 minor remaining)
+**Security Rating:** ✅ STRONG (9/10 resolved, 2 minor remaining)
 
 See `SECURITY.md` for complete architecture documentation.
