@@ -146,8 +146,8 @@ function Invoke-RequestRouter {
             if ($paramString) {
                 # Build script block dynamically to handle parameters correctly
                 # This allows routes.json to specify parameters like: "Script.ps1 -Type RefreshAll"
-                $scriptBlock = [scriptblock]::Create("& '$RequestCommand' $paramString -RequestArgs `$args[0] -Body `$args[1]")
-                $CommandReturn = & $scriptBlock $RequestArgs $script:Body
+                $scriptBlock = [scriptblock]::Create("& '$RequestCommand' $paramString")
+                $CommandReturn = & $scriptBlock
             }
             else {
                 $CommandReturn = . $RequestCommand -RequestArgs $RequestArgs -Body $script:Body
