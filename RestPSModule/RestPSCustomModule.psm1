@@ -16,30 +16,6 @@ function Invoke-GetBody {
     }
 }
 
-<#
-.SYNOPSIS
-    Validates HMAC-SHA256 request signature from RestPSWrapper
-.DESCRIPTION
-    Validates the X-Request-Signature header sent by the .NET wrapper.
-    The signature is HMAC-SHA256 of: {user}|{method}|{path}|{bodyLength}|{body}
-    Uses constant-time comparison to prevent timing attacks.
-.PARAMETER Request
-    The HttpListenerRequest object from the PowerShell backend
-.PARAMETER Body
-    The request body content (use "[EMPTY]" if body is null/empty)
-.PARAMETER Secret
-    The shared secret from base_settings.json RequestSignatureSecret
-.EXAMPLE
-    $isValid = Test-RequestSignature -Request $script:Request -Body $script:Body -Secret $ScriptVariables.RequestSignatureSecret
-    if (-not $isValid) {
-        $script:StatusCode = 401
-        $script:StatusDescription = "Unauthorized - Invalid Signature"
-        return $null
-    }
-.NOTES
-    This function requires .NET classes for HMAC-SHA256 computation.
-    Returns $true if signature is valid, $false otherwise.
-#>
 function Test-RequestSignature {
     [CmdletBinding()]
     [OutputType([bool])]
