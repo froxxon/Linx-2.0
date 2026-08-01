@@ -56,6 +56,7 @@ No format validation, length limits, or user binding. Session fixation attacks p
 - ✅ **CSRF expiry accuracy** - Uses configured value
 - ✅ **Content-Type preservation** - Forwards original with parameters
 - ✅ **Multipart form data fix** - Handles boundary parameters correctly
+- ✅ **AllowedHosts wildcard** - Documented in SECURITY.md with configuration guidance
 
 ---
 
@@ -70,10 +71,10 @@ No format validation, length limits, or user binding. Session fixation attacks p
 | Size limit bypass | ✅ FIXED |
 | Backend anonymous auth | ✅ DOCUMENTED |
 | Headers on auth failures | ✅ FIXED |
-| AllowedHosts wildcard | ⚠️ NOT FIXED |
+| AllowedHosts wildcard | ✅ DOCUMENTED |
 | Hardcoded CSRF expiry | ✅ FIXED |
 | Body re-typed as JSON | ✅ FIXED |
 
-**Security Rating:** ✅ STRONG (9/10 resolved, 2 minor remaining)
+**Security Rating:** ✅ STRONG (9/10 resolved, 1 minor remaining)
 
 See `SECURITY.md` for complete architecture documentation.

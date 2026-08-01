@@ -69,6 +69,57 @@ The wrapper must connect to localhost backend:
 }
 ```
 
+### AllowedHosts Configuration
+
+The `AllowedHosts` setting in `appsettings.json` controls Host header validation to prevent Host header injection attacks and cache poisoning.
+
+**Development (Current Default)**:
+```json
+{
+  "AllowedHosts": "*"
+}
+```
+⚠️ **Wildcard `*` disables validation** - acceptable for development but should be restricted in production.
+
+**Production (Recommended)**:
+```json
+{
+  "AllowedHosts": "linx.example.com;www.linx.example.com"
+}
+```
+
+**Format Rules**:
+- **Semicolon-separated** list (`;` not `,`)
+- **Hostname only** (no `https://` protocol)
+- **Include port** if non-standard: `example.com:8443`
+- **Subdomain wildcards** supported: `*.example.com`
+- **Multiple domains** allowed: `site1.com;site2.net`
+
+**Examples**:
+
+```json
+// Single production domain
+"AllowedHosts": "linx.company.com"
+
+// Multiple domains
+"AllowedHosts": "linx.company.com;www.linx.company.com;api.linx.company.com"
+
+// Subdomain wildcard
+"AllowedHosts": "*.company.com"
+
+// Multiple domains with ports
+"AllowedHosts": "linx.company.com:443;backup.company.com:8443"
+
+// Development/localhost
+"AllowedHosts": "localhost;127.0.0.1;*"
+```
+
+**Security Impact**:
+- ✅ **Configured**: Prevents Host header injection, cache poisoning, and routing attacks
+- ⚠️ **Wildcard (`*`)**: Disables protection - only use in isolated development environments
+
+**Recommendation**: Set to actual production domain(s) before deployment. Update during deployment automation or use environment variables.
+
 ## Threat Model
 
 ### Protected Against:
