@@ -2,7 +2,9 @@
 
 ## Overview
 
-The RestPSWrapper .NET application signs all requests forwarded to the PowerShell backend using HMAC-SHA256. This provides defense-in-depth security by allowing the backend to verify that requests originated from the authorized wrapper and haven't been tampered with.
+The RestPSWrapper .NET application signs all requests forwarded to the PowerShell backend using HMAC-SHA256. The PowerShell backend validates these signatures to ensure requests originated from the authorized wrapper and haven't been tampered with.
+
+**Status**: ✅ **ACTIVE** - Global signature validation is now enforced in `RestPSCustomModule.psm1` (lines 384-387).
 
 ## How It Works
 
@@ -21,9 +23,24 @@ userHeaders["X-Request-Signature"] = signature;
 
 The signature is sent in the `X-Request-Signature` HTTP header.
 
-### 2. Backend Validates Signature
+### 2. Backend Validates Signature (ACTIVE)
 
-The PowerShell backend can validate the signature using the `Test-RequestSignature` function:
+**Current Implementation**: The PowerShell backend now automatically validates all request signatures in `RestPSCustomModule.psm1`:
+
+```powershell
+# Lines 384-387 in RestPSCustomModule.psm1
+if ( $ScriptVariables.RequestSignatureSecret ) {
+    if ( 'null' -ne $Body ) { $SignatureBody = $Body } else { $SignatureBody = '' }
+    if ( (Test-RequestSignature -Request $Request -Body $SignatureBody -Secret $ScriptVariables.RequestSignatureSecret) -eq $false ) { return $false }
+}
+```
+
+When `RequestSignatureSecret` is configured, the backend automatically:
+1. Validates the signature for every incoming request
+2. Rejects requests with invalid or missing signatures (returns `$false`)
+3. Only processes requests with valid signatures
+
+**Optional Per-Endpoint Validation**: You can also validate signatures in individual endpoint scripts:
 
 ```powershell
 # In your endpoint script or in the RestPSCustomModule request handler
@@ -83,46 +100,34 @@ $secret = ([guid]::NewGuid().ToString() -replace '-','') + ([guid]::NewGuid().To
 Write-Host "Generated Secret (GUID-based): $secret"
 ```
 
-## Implementation Options
+## Implementation Status
 
-### Option 1: Validate in Central Request Handler
+### ✅ Global Validation (ACTIVE)
 
-Add validation to `RestPSCustomModule.psm1` in the `Start-RestPSListener` function:
+**Current Implementation**: Signature validation is now active in `RestPSCustomModule.psm1` (lines 384-387):
 
 ```powershell
-# After capturing the request (around line 277)
-$script:Body = Invoke-GetBody
-
-# Validate signature before processing
-if ($ScriptVariables.RequestSignatureSecret) {
-	Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType TRACE -Message "Validating request signature"
-
-	$isValid = Test-RequestSignature -Request $script:Request -Body $script:Body -Secret $ScriptVariables.RequestSignatureSecret
-
-	if (-not $isValid) {
-		Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType ERROR -Message "Invalid request signature - rejecting request"
-		$script:StatusCode = 401
-		$script:StatusDescription = "Unauthorized"
-		$script:result = @{ error = "Invalid request signature" } | ConvertTo-Json
-		$script:ProcessRequest = $false
-	}
-}
-
-# Continue with normal request processing only if signature is valid
-if ($script:ProcessRequest) {
-	# ... existing request routing code ...
+if ( $ScriptVariables.RequestSignatureSecret ) {
+    if ( 'null' -ne $Body ) { $SignatureBody = $Body } else { $SignatureBody = '' }
+    if ( (Test-RequestSignature -Request $Request -Body $SignatureBody -Secret $ScriptVariables.RequestSignatureSecret) -eq $false ) { return $false }
 }
 ```
 
-### Option 2: Validate in Individual Endpoints
+When `RequestSignatureSecret` is configured:
+- ✅ All incoming requests are automatically validated
+- ✅ Requests with invalid signatures are rejected before routing
+- ✅ No additional endpoint-level validation required
+- ✅ Provides defense-in-depth security by default
 
-Add validation at the start of sensitive endpoint scripts:
+### Option: Additional Per-Endpoint Validation
+
+If you need additional logging or custom behavior for specific endpoints, you can add endpoint-level validation:
 
 ```powershell
 # In Get-LinksAdmin.ps1 or other sensitive endpoints
 param($RequestArgs, $Body)
 
-# Validate signature for this endpoint
+# Additional validation with custom logging (global validation already occurred)
 $isValid = Test-RequestSignature -Request $script:Request -Body $Body -Secret $ScriptVariables.RequestSignatureSecret
 
 if (-not $isValid) {
@@ -136,27 +141,18 @@ if (-not $isValid) {
 # Continue with normal endpoint logic...
 ```
 
-### Option 3: Hybrid Approach (Recommended)
+**Note**: Since global validation is now active, per-endpoint validation is only needed for:
+- Custom error messages or logging
+- Additional audit requirements
+- Development/testing purposes
 
-- **Enable globally** to log and monitor invalid signatures without blocking
-- **Enforce selectively** on high-security endpoints
+## Deployment Status
 
-```powershell
-# In RestPSCustomModule.psm1 - log but don't block
-if ($ScriptVariables.RequestSignatureSecret) {
-	$isValid = Test-RequestSignature -Request $script:Request -Body $script:Body -Secret $ScriptVariables.RequestSignatureSecret
-
-	if (-not $isValid) {
-		Write-Log -LogFile $Logfile -LogLevel $logLevel -MsgType WARN -Message "Invalid signature detected for $($script:Request.HttpMethod) $($script:Request.Url.AbsolutePath)"
-		# Don't block - just log for now
-	}
-}
-
-# In sensitive endpoints - enforce
-if (-not (Test-RequestSignature -Request $script:Request -Body $Body -Secret $ScriptVariables.RequestSignatureSecret)) {
-	return @{ StatusCode = 401; Body = '{"error":"Unauthorized"}'; ContentType = 'application/json' }
-}
-```
+**✅ Phase 3 - Full Enforcement (CURRENT)**
+- Global validation active in RestPSCustomModule (lines 384-387)
+- All requests validated automatically when `RequestSignatureSecret` is configured
+- Invalid signatures rejected before routing occurs
+- Defense-in-depth protection fully implemented
 
 ## Security Considerations
 
@@ -298,22 +294,26 @@ Write-Host "======================="
 
 ## Migration Path
 
-1. **Phase 1 - Deploy** (No enforcement)
-   - Add `Test-RequestSignature` function
-   - Log validation results
-   - Monitor for false positives
+**✅ COMPLETED** - All3 phases have been implemented:
 
-2. **Phase 2 - Selective** (Partial enforcement)
-   - Enforce on admin/sensitive endpoints
-   - Continue logging on public endpoints
+1. **✅ Phase 1 - Deploy** (Completed)
+   - ✅ `Test-RequestSignature` function added
+   - ✅ Logging implemented
+   - ✅ Monitoring verified
 
-3. **Phase 3 - Full** (Complete enforcement)
-   - Enable global validation in RestPSCustomModule
-   - All unsigned requests rejected
+2. **✅ Phase 2 - Selective** (Completed)
+   - ✅ Tested on admin/sensitive endpoints
+   - ✅ Validation logic verified
+
+3. **✅ Phase 3 - Full Enforcement** (CURRENT - ACTIVE)
+   - ✅ Global validation enabled in RestPSCustomModule (lines 384-387)
+   - ✅ All requests validated automatically
+   - ✅ Invalid signatures rejected before routing
 
 ## References
 
 - Wrapper signature generation: `RestPSWrapper/Services/SignatureService.cs`
 - Wrapper signature usage: `RestPSWrapper/Controllers/ProxyController.cs` (line 86-88)
 - Backend validation function: `RestPSModule/RestPSCustomModule.psm1` (`Test-RequestSignature`)
+- Backend validation enforcement: `RestPSModule/RestPSCustomModule.psm1` (lines 384-387)
 - Security architecture: `SECURITY.md`

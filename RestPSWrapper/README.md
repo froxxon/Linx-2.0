@@ -16,7 +16,8 @@ PowerShell Endpoints (localhost:8080+, HTTP)
 
 - **Kerberos Authentication** via IIS and Negotiate middleware
 - **HTTPS/SSL** support
-- **Route Management** - Routes loaded from JSON configuration
+- **Dynamic Route Reloading** - Routes automatically reload when file changes (hash-based detection)
+- **Request Signature Validation** - HMAC-SHA256 signature verification in PowerShell backend
 - **Request Logging** - All requests logged with user identity
 - **Security Headers** - CSP, CORS, cache control, and more
 - **Secure User Authentication** - HMAC-SHA256 signed headers
@@ -380,7 +381,7 @@ dotnet run --configuration Production
 ## Services
 
 ### IRouteService
-Loads and caches routes from JSON configuration file. Reloads on each request to pick up new routes (like the PowerShell module).
+Loads and caches routes from JSON configuration file. Routes are automatically reloaded when the file changes in the PowerShell backend (hash-based detection).
 
 ### IPowerShellProxyService
 Forwards HTTP requests to PowerShell endpoints running on localhost, including secure user authentication headers.
@@ -431,3 +432,34 @@ Enforces maximum request body size limits.
 - `appsettings.json` - Default settings
 - `appsettings.Development.json` - Development overrides (debug logging)
 - `appsettings.Production.json` - Production overrides (URLs, log level)
+
+## PowerShell Backend Features
+
+The PowerShell backend (`RestPSModule/RestPSCustomModule.psm1`) provides additional security and performance features:
+
+### Dynamic Route Reloading
+
+Routes are loaded into memory and automatically reloaded when the Routes.json file changes:
+
+- **Initial Load**: Routes loaded on first request (lines 109-122)
+- **Hash-Based Detection**: File hash checked on each request (line 123)
+- **Automatic Reload**: Routes reloaded when hash changes (lines 124-136)
+- **Error Handling**: Reload failures logged; previous routes remain active
+- **Performance**: Hash comparison is fast; full reload only on actual changes
+
+**Benefits**:
+- Zero downtime route updates
+- No service restart required
+- Automatic rollback on reload failure
+- Transparent to clients
+
+### Request Signature Validation
+
+All requests from the wrapper are validated using HMAC-SHA256 signatures:
+
+- **Implementation**: Lines 384-387 in `RestPSCustomModule.psm1`
+- **Enforcement**: Enabled when `RequestSignatureSecret` is configured
+- **Behavior**: Invalid or missing signatures rejected before routing
+- **Defense-in-Depth**: Prevents tampering and unauthorized direct access
+
+See `Linx/SIGNATURE-VALIDATION.md` for detailed documentation.
