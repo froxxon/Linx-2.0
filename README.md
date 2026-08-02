@@ -49,13 +49,12 @@ This place would in this scenario be, you've probably already guessed it, Linx.
 - Role-based Access Control *per* link
 - Role-based Access Control for editors and admins
 - OU-based access control for regular users
-- Customize (*some*) CSS in web interface Customize regular expressions used to your need
+- Customize regular expressions used to your need
 - No database needed - all stored locally (*with pros and cons coming with that approach*)
 - Support for multiple languages (currently English and Swedish)
 - Fully customizable (*as long as you know your PS*)
 - Add notes and a potential contact to each link
 - Uses "*System.Net.HttpListener*"
-- New logo
 
 ### RestPSWrapper Features
 
