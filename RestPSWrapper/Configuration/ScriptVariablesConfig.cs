@@ -33,9 +33,6 @@ public class ScriptVariablesConfig
     /// <summary>Content-Language header (e.g., 'en', 'sv', 'en-US') - prevents browser translation prompts</summary>
     public string ContentLanguage { get; set; } = "sv-SE";
 
-    /// <summary>CORS Access-Control-Allow-Origin (comma-separated for multiple origins)</summary>
-    public string AccessControlAllowOrigin { get; set; } = string.Empty;
-
     /// <summary>CORS Access-Control-Allow-Methods (comma-separated)</summary>
     public string AccessControlAllowMethods { get; set; } = string.Empty;
 
