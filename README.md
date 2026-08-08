@@ -258,7 +258,6 @@ The `ScriptVariables` section contains all configuration that was previously in 
   "HTMLContentSecurityPolicy": "block-all-mixed-content; base-uri 'none'; object-src 'none';",
   "HTMLXContentTypeOptions": "nosniff",
   "ContentLanguage": "sv-SE",
-  "AccessControlAllowOrigin": "",
   "AccessControlAllowMethods": "",
   "PowerShellServiceUrl": "http://localhost:8080",
   "RequestSignatureSecret": "${RESTPS_SIGNATURE_SECRET}",
